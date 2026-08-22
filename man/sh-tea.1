@@ -1,0 +1,270 @@
+.TH SH-TEA 1 "2026-08-15" "sh-tea 0.1.0" "User Commands"
+.
+.SH NAME
+sh-tea \- transparent pipeline stage logger (tee pun)
+.
+.SH SYNOPSIS
+.B FILTER
+.RI [ --tea | --no-tea | --coffee ]
+.RI [ tool-options ]
+.RI [ operands... ]
+.PP
+.B sh-tea
+.RB [ last | list | show
+.RI [ id ]
+.RB | config | which
+.IR tool ]
+.
+.SH DESCRIPTION
+.B sh-tea
+overrides common
+.B stdin\(rarrstdout
+stream filters with thin wrappers that pass every flag through to the real
+binary.  When
+.B activated ,
+each wrapper copies its
+.B stdin
+to a temporary file created with
+.B mktemp\ --suffix\ .tea
+(usually under
+.BR /tmp )
+and appends an index row to
+.B ./logs.csv
+before/while running the underlying command.
+Stdout of the real command is left untouched so pipelines stay valid
+.RI ( "nix eval \&... | jq"
+still works).
+.PP
+Status blurbs go to
+.B stderr
+only \(one line, e.g.
+.BR "[sh-tea] --id 60 /tmp/tmp.XXXXXX.tea | tail -150" ).
+.PP
+Manual pages for the underlying tools
+.RB ( man\ grep ,
+.BR man\ sort ,
+etc.) are unchanged.
+Use
+.B man sh-tea
+for this behaviour.
+.PP
+.B tee
+and
+.B cat
+are
+.B not
+wrapped \(em they do not mutate stdout content (fan-out / identity).
+.
+.SH WRAPPED TOOLS
+Filters that mutate the byte/line stream (selection, rewrite, reorder,
+reshape, dump/count).  Canonical list lives in
+.IR tools.nix .
+.PP
+.B Selection / slicing:
+grep, egrep, fgrep, head, tail, cut
+.PP
+.B Rewriting:
+sed, awk, gawk, tr, expand, unexpand, fmt, fold, nl, numfmt
+.PP
+.B Ordering / uniqueness:
+sort, uniq, shuf, tac, rev, tsort
+.PP
+.B Columnar / paste:
+paste, join, column, col, colrm
+.PP
+.B Dump / count:
+od, hexdump, hd, wc
+.PP
+.B Misc text:
+pr, ptx, comm
+.PP
+BusyBox-shaped workflows are covered by wrapping the GNU/util-linux binaries
+NixOS puts on PATH (same applet names).
+.
+.SH ACTIVATION
+Activation is evaluated in this order:
+.TP
+.B --coffee , --no-tea
+Force off for this invocation.
+.TP
+.B --tea
+Force on for this invocation.
+.TP
+.B SH_TEA_OFF=1 / SH_TEA_FORCE=1
+Environment overrides (off / on); CLI flags win over these.
+.TP
+.B manual-only
+When true in config, only
+.B --tea
+(or
+.BR SH_TEA_FORCE )
+activates.
+.TP
+.B agentic session
+Detected via common agent environment variables
+.RI ( CURSOR_AGENT , CLAUDECODE , COPILOT_CLI , AEGIS , HERMES_AGENT , AGENT , ...)
+or parent process names. Also
+.BR SH_TEA_AGENT=1 .
+.TP
+.B interactive session
+When
+.B default-interactive
+is true (default): stderr is a TTY
+(pipeline stages usually still have a TTY stderr even when stdin is a pipe).
+.PP
+Non-interactive scripts without agent markers are a no-op: the real binary is
+.BR exec 'd
+with tea flags stripped and
+.B zero
+extra stderr.
+.
+.SH FILES
+.TP
+.I $TMPDIR/tmp.XXXXXX.tea
+Captured stdin for each activated stage
+.RI ( mktemp\ --suffix\ .tea ;
+typically under
+.BR /tmp ).
+Ephemeral by design.
+.TP
+.I ./logs.csv
+Index of the last
+.I N
+stages (default 20). Oldest rows and their
+.B .tea
+files are deleted when a new
+row would exceed
+.BR max-log-records .
+Columns:
+.IR id , timestamp , cwd , tool , command , highlighted , logfile , bytes , exit_code .
+The
+.B logfile
+column stores the absolute
+.B .tea
+path. The
+.B highlighted
+column marks the active stage with ⟦\&...⟧ inside a best-effort pipeline
+reconstruction.
+.TP
+.I ~/.config/sh-tea/config.toml
+Created on first use. Per-tool keys:
+.BR enabled ,
+.BR only-in-git-repos ,
+.BR only-outside-git-repos ,
+.BR update-gitignore ,
+.BR default-interactive
+.RI ( alias:\ default-intactive ),
+.BR manual-only ,
+.BR max-log-records ,
+.BR quiet .
+.TP
+.I .gitignore
+When
+.B update-gitignore
+is true and the cwd is inside a git work tree,
+.B logs.csv
+is appended if missing.
+.
+.SH OPTIONS (WRAPPERS)
+These flags are consumed by sh-tea and
+.B not
+passed to the underlying tool:
+.TP
+.B --tea
+Enable logging for this invocation.
+.TP
+.B --no-tea , --coffee
+Disable logging for this invocation.
+.
+.SH COMMANDS
+.TP
+.B sh-tea last
+Print the path of the most recent logfile (cwd-relative
+.IR ./logs.csv ).
+.TP
+.B sh-tea list
+Dump
+.I ./logs.csv
+to stdout.
+.TP
+.B sh-tea show [id]
+Print logfile contents (default: last id).
+.TP
+.B sh-tea config
+Ensure and print the path to
+.IR config.toml .
+.TP
+.B sh-tea which TOOL
+Print whether activation would fire for
+.I TOOL
+and the effective config.
+.
+.SH ENVIRONMENT
+.TP
+.B SH_TEA_OFF
+If truthy, disable activation unless
+.B --tea
+is passed (CLI flags win).
+.TP
+.B SH_TEA_FORCE
+If truthy, force activation unless
+.B --coffee / --no-tea
+is passed.
+.TP
+.B SH_TEA_QUIET
+Suppress the stderr blurb.
+.TP
+.B SH_TEA_AGENT / SH_TEA_INTERACTIVE
+Force agentic / interactive detection.
+.TP
+.B XDG_CONFIG_HOME
+Config root (default
+.IR ~/.config ).
+.PP
+Precedence:
+.BR --coffee / --no-tea
+>
+.B --tea
+>
+.B SH_TEA_OFF
+>
+.B SH_TEA_FORCE
+>
+config / auto-detect.
+.
+.SH EXAMPLES
+.NF
+# CLAUDE.md-style build filter — pre-filter stream lands in /tmp/*.tea
+nix build .#nixosConfigurations.void.config.system.build.toplevel --no-link \\
+  2>&1 | grep error -C 10 | sort | uniq | tail -100
+sh-tea last
+sh-tea show
+
+# Force on inside a script
+some-cmd | grep --tea pattern
+
+# Force off in an interactive terminal
+some-cmd | grep --coffee pattern | head --coffee
+
+# Clean stdout for jq (blurbs already on stderr; coffee for belt-and-braces)
+nix eval --json .#foo | jq .
+.FI
+.
+.SH SEE ALSO
+.BR grep (1),
+.BR sort (1),
+.BR sed (1),
+.BR awk (1),
+.BR head (1),
+.BR tail (1),
+.BR tapper (1)
+.
+.SH NOTES
+.B sh-tea
+is intentionally weaker than
+.BR tapper (1):
+tapper is foresight (you hand it the whole pipeline string).
+sh-tea is hindsight bolted onto everyday habits \(em no new command name to
+remember, and agent instructions that already say
+.RB \*(lq grep | sort | tail \*(rq
+keep working.
