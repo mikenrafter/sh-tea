@@ -110,9 +110,13 @@ or parent process names. Also
 When
 .B default-interactive
 is true (default): stderr is a TTY, stdin is a pipe, and the parent process
-is the user's shell (not a terminal emulator's internal
+is the user's shell (not POSIX
+.BR sh / dash,
+nor a terminal emulator's internal
+.BR fish\ -c /
 .BR sh\ -c
-pipeline).
+pipeline under
+.BR TERM_PROGRAM ).
 .TP
 .B --tea / --coffee
 Only work on tea-wrapped binaries from this package (must be ahead of the

@@ -62,6 +62,17 @@ const AGENT_COMM_SUBSTRINGS: &[&str] = &[
     "hermes-agent",
 ];
 
+const AGENT_PROCESS_NAMES: &[&str] = &[
+    "cursor-agent",
+    "claude",
+    "claude-code",
+    "copilot",
+    "copilot-cli",
+    "aegis",
+    "hermes-agent",
+    "hermes",
+];
+
 const DEFAULT_CONFIG_TOML: &str = r#"# tea — transparent pipeline logger
 # Per-tool [tools.*] sections are added from TEA_DEFAULT_CONFIG when present.
 
@@ -348,6 +359,45 @@ fn comm_is_terminal_emulator(comm: &str) -> bool {
         .any(|s| low.contains(s))
 }
 
+fn term_program_is_emulator() -> bool {
+    env::var("TERM_PROGRAM")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .is_some_and(|tp| {
+            let low = tp.to_lowercase();
+            TERMINAL_EMULATOR_COMM_SUBSTRINGS
+                .iter()
+                .any(|s| low.contains(s))
+                || low.ends_with("terminal")
+        })
+}
+
+fn comm_looks_agent(comm: &str) -> bool {
+    let low = comm.trim().to_lowercase();
+    AGENT_COMM_SUBSTRINGS
+        .iter()
+        .any(|s| low == *s || low.starts_with(&format!("{s}")))
+}
+
+fn basename_looks_agent(name: &str) -> bool {
+    let low = name.trim().to_lowercase();
+    AGENT_PROCESS_NAMES.iter().any(|&n| low == n)
+}
+
+pub fn parent_comm() -> Option<String> {
+    let ppid = unsafe { libc::getppid() };
+    process_comm(ppid)
+}
+
+pub fn parent_cmdline_display() -> String {
+    let ppid = unsafe { libc::getppid() };
+    let argv = process_cmdline_argv(ppid);
+    if argv.is_empty() {
+        return "-".into();
+    }
+    argv.join(" ")
+}
+
 fn shell_argv_has_dash_c(argv: &[String]) -> bool {
     if argv.is_empty() {
         return false;
@@ -355,22 +405,7 @@ fn shell_argv_has_dash_c(argv: &[String]) -> bool {
     if !SHELL_NAMES.iter().any(|s| *s == argv0_base(argv).as_str()) {
         return false;
     }
-    let mut i = 1;
-    while i < argv.len() {
-        let arg = &argv[i];
-        if arg == "--" {
-            break;
-        }
-        if arg == "-c" {
-            return true;
-        }
-        if arg.starts_with('-') {
-            i += 1;
-            continue;
-        }
-        break;
-    }
-    false
+    argv.iter().any(|a| a == "-c")
 }
 
 /// True when the immediate parent is the user's shell (or a shell `-c` one
@@ -384,11 +419,24 @@ pub fn is_user_pipeline_stage() -> bool {
     let Some(parent_comm) = process_comm(ppid) else {
         return false;
     };
+    let parent_argv = process_cmdline_argv(ppid);
+    let parent_base = argv0_base(&parent_argv);
+
+    // Terminal emulators and make/recipes spawn filters via POSIX sh/dash, not
+    // the user's fish/bash pipeline executor.
+    if matches!(parent_base.as_str(), "sh" | "dash") {
+        return false;
+    }
+
     if !comm_is_shell(&parent_comm) {
         return false;
     }
-    let parent_argv = process_cmdline_argv(ppid);
+
     if shell_argv_has_dash_c(&parent_argv) {
+        // Warp uses bash/sh -c for internal pipelines; fish -c is still a user shell.
+        if term_program_is_emulator() && parent_base != "fish" {
+            return false;
+        }
         let Some(gppid) = process_ppid(ppid) else {
             return false;
         };
@@ -487,8 +535,7 @@ pub fn is_agentic() -> bool {
             break;
         }
         if let Ok(comm) = fs::read_to_string(format!("/proc/{pid}/comm")) {
-            let low = comm.trim().to_lowercase();
-            if AGENT_COMM_SUBSTRINGS.iter().any(|s| low.contains(s)) {
+            if comm_looks_agent(&comm) {
                 return true;
             }
         }
@@ -501,9 +548,8 @@ pub fn is_agentic() -> bool {
             let name = Path::new(argv0)
                 .file_name()
                 .and_then(|n| n.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            if AGENT_COMM_SUBSTRINGS.iter().any(|s| name.contains(s)) {
+                .unwrap_or("");
+            if basename_looks_agent(name) {
                 return true;
             }
         }
