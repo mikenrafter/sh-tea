@@ -398,6 +398,41 @@ pub fn parent_cmdline_display() -> String {
     argv.join(" ")
 }
 
+fn shell_level() -> Option<u32> {
+    env::var("SHLVL").ok().and_then(|v| v.parse().ok())
+}
+
+fn parent_is_warp_bootstrap_fish(argv: &[String]) -> bool {
+    argv0_base(argv) == "fish"
+        && argv.iter().any(|a| a == "--init-command")
+        && argv
+            .iter()
+            .any(|a| a.contains("InitShell") || a.contains("WARP_SESSION_ID"))
+}
+
+/// Warp and similar terminals spawn nested shell layers (InitShell bootstrap,
+/// command substitutions) before running internal sed/tr/od pipelines. User
+/// pipeline stages inherit SHLVL from the interactive shell (~2); internal
+/// tooling is much deeper (the Warp echo path observed SHLVL=5).
+fn is_terminal_emulator_deep_subprocess() -> bool {
+    if !term_program_is_emulator() {
+        return false;
+    }
+    let Some(level) = shell_level() else {
+        return false;
+    };
+    if level >= 4 {
+        return true;
+    }
+    false
+}
+
+pub fn shell_level_display() -> String {
+    shell_level()
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| "-".into())
+}
+
 fn shell_argv_has_dash_c(argv: &[String]) -> bool {
     if argv.is_empty() {
         return false;
@@ -421,6 +456,18 @@ pub fn is_user_pipeline_stage() -> bool {
     };
     let parent_argv = process_cmdline_argv(ppid);
     let parent_base = argv0_base(&parent_argv);
+
+    if is_terminal_emulator_deep_subprocess() {
+        return false;
+    }
+
+    // Warp session fish: `--init-command` InitShell bootstrap, not a user pipe.
+    if term_program_is_emulator()
+        && parent_is_warp_bootstrap_fish(&parent_argv)
+        && shell_level().is_some_and(|n| n >= 3)
+    {
+        return false;
+    }
 
     // Terminal emulators and make/recipes spawn filters via POSIX sh/dash, not
     // the user's fish/bash pipeline executor.

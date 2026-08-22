@@ -124,9 +124,10 @@ Precedence, highest first (see `src/lib.rs::should_activate`):
      `COPILOT_CLI`, `AEGIS`, `HERMES_AGENT`, or a parent process name match)
      → activates
    - interactive pipeline stage (stderr is a TTY, stdin is a pipe, parent is
-     the user's shell — not POSIX `sh`/`dash` or a terminal emulator's
-     internal `fish -c` / `sh -c` pipeline) → activates when
-     `default-interactive = true` in config (the default)
+     the user's shell — not POSIX `sh`/`dash`, not a terminal emulator's deep
+     nested subprocess (`SHLVL` ≥ 4 under `TERM_PROGRAM`), nor Warp's
+     `--init-command` bootstrap fish) → activates when `default-interactive =
+     true` in config (the default)
    - otherwise → no-op, zero extra stderr, real binary runs untouched
 
 `--tea` / `--coffee` only work on the **tea-wrapped** binaries from this

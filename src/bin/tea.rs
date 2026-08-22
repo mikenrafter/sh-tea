@@ -7,8 +7,8 @@ use std::process;
 use tea::{
     ensure_user_config, in_git_repo, invocation_id, is_agentic, is_interactive_session,
     is_user_pipeline_stage, last_row, list_rows, load_config, load_tools, parent_cmdline_display,
-    parent_comm, parent_is_running_script, running_as_systemd_unit, should_activate, strip_tea_flags,
-    systemd_suppresses_activation, tool_config, CSV_FIELDS,
+    parent_comm, parent_is_running_script, running_as_systemd_unit, shell_level_display,
+    should_activate, strip_tea_flags, systemd_suppresses_activation, tool_config, CSV_FIELDS,
 };
 
 const USAGE: &str = "\
@@ -146,6 +146,7 @@ fn cmd_which(tool: &str, extra_args: &[String]) -> i32 {
         "term_program={}",
         std::env::var("TERM_PROGRAM").unwrap_or_else(|_| "-".into())
     );
+    println!("shlvl={}", shell_level_display());
     println!("in_git_repo={}", in_git_repo(None));
     println!("config={}", cfg.path);
     println!("  enabled={}", tcfg.enabled);
