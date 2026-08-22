@@ -1,7 +1,7 @@
-.TH SH-TEA 1 "2026-08-15" "sh-tea 0.1.0" "User Commands"
+.TH TEA 1 "2026-08-15" "tea 0.1.0" "User Commands"
 .
 .SH NAME
-sh-tea \- transparent pipeline stage logger (tee pun)
+tea, sh-tea \- transparent pipeline stage logger (tee pun)
 .
 .SH SYNOPSIS
 .B FILTER
@@ -9,14 +9,14 @@ sh-tea \- transparent pipeline stage logger (tee pun)
 .RI [ tool-options ]
 .RI [ operands... ]
 .PP
-.B sh-tea
+.B tea
 .RB [ last | list | show
 .RI [ id ]
 .RB | config | which
 .IR tool ]
 .
 .SH DESCRIPTION
-.B sh-tea
+.B tea
 overrides common
 .B stdin\(rarrstdout
 stream filters with thin wrappers that pass every flag through to the real
@@ -38,14 +38,14 @@ still works).
 Status blurbs go to
 .B stderr
 only \(one line, e.g.
-.BR "[sh-tea] --id 60 /tmp/tmp.XXXXXX.tea | tail -150" ).
+.BR "[tea] --id 60 /tmp/tmp.XXXXXX.tea | tail -150" ).
 .PP
 Manual pages for the underlying tools
 .RB ( man\ grep ,
 .BR man\ sort ,
 etc.) are unchanged.
 Use
-.B man sh-tea
+.B man tea
 for this behaviour.
 .PP
 .B tee
@@ -90,21 +90,21 @@ Force off for this invocation.
 .B --tea
 Force on for this invocation.
 .TP
-.B SH_TEA_OFF=1 / SH_TEA_FORCE=1
+.B TEA_OFF=1 / TEA_FORCE=1
 Environment overrides (off / on); CLI flags win over these.
 .TP
 .B manual-only
 When true in config, only
 .B --tea
 (or
-.BR SH_TEA_FORCE )
+.BR TEA_FORCE )
 activates.
 .TP
 .B agentic session
 Detected via common agent environment variables
 .RI ( CURSOR_AGENT , CLAUDECODE , COPILOT_CLI , AEGIS , HERMES_AGENT , AGENT , ...)
 or parent process names. Also
-.BR SH_TEA_AGENT=1 .
+.BR TEA_AGENT=1 .
 .TP
 .B interactive session
 When
@@ -146,7 +146,7 @@ path. The
 column marks the active stage with ⟦\&...⟧ inside a best-effort pipeline
 reconstruction.
 .TP
-.I ~/.config/sh-tea/config.toml
+.I ~/.config/tea/config.toml
 Created on first use. Per-tool keys:
 .BR enabled ,
 .BR only-in-git-repos ,
@@ -166,7 +166,7 @@ is true and the cwd is inside a git work tree,
 is appended if missing.
 .
 .SH OPTIONS (WRAPPERS)
-These flags are consumed by sh-tea and
+These flags are consumed by tea and
 .B not
 passed to the underlying tool:
 .TP
@@ -178,43 +178,43 @@ Disable logging for this invocation.
 .
 .SH COMMANDS
 .TP
-.B sh-tea last
+.B tea last
 Print the path of the most recent logfile (cwd-relative
 .IR ./logs.csv ).
 .TP
-.B sh-tea list
+.B tea list
 Dump
 .I ./logs.csv
 to stdout.
 .TP
-.B sh-tea show [id]
+.B tea show [id]
 Print logfile contents (default: last id).
 .TP
-.B sh-tea config
+.B tea config
 Ensure and print the path to
 .IR config.toml .
 .TP
-.B sh-tea which TOOL
+.B tea which TOOL
 Print whether activation would fire for
 .I TOOL
 and the effective config.
 .
 .SH ENVIRONMENT
 .TP
-.B SH_TEA_OFF
+.B TEA_OFF
 If truthy, disable activation unless
 .B --tea
 is passed (CLI flags win).
 .TP
-.B SH_TEA_FORCE
+.B TEA_FORCE
 If truthy, force activation unless
 .B --coffee / --no-tea
 is passed.
 .TP
-.B SH_TEA_QUIET
+.B TEA_QUIET
 Suppress the stderr blurb.
 .TP
-.B SH_TEA_AGENT / SH_TEA_INTERACTIVE
+.B TEA_AGENT / TEA_INTERACTIVE
 Force agentic / interactive detection.
 .TP
 .B XDG_CONFIG_HOME
@@ -226,9 +226,9 @@ Precedence:
 >
 .B --tea
 >
-.B SH_TEA_OFF
+.B TEA_OFF
 >
-.B SH_TEA_FORCE
+.B TEA_FORCE
 >
 config / auto-detect.
 .
@@ -237,8 +237,8 @@ config / auto-detect.
 # CLAUDE.md-style build filter — pre-filter stream lands in /tmp/*.tea
 nix build .#nixosConfigurations.void.config.system.build.toplevel --no-link \\
   2>&1 | grep error -C 10 | sort | uniq | tail -100
-sh-tea last
-sh-tea show
+tea last
+tea show
 
 # Force on inside a script
 some-cmd | grep --tea pattern
@@ -261,10 +261,19 @@ nix eval --json .#foo | jq .
 .
 .SH NOTES
 .B sh-tea
+is the project/repo name; the installed CLI and every env var stay
+.B tea
+for brevity.
+.B sh-tea
+also ships on PATH as a plain alias for
+.B tea
+(same binary, same flags, same config) for anyone who typed the full name.
+.PP
+.B tea
 is intentionally weaker than
 .BR tapper (1):
 tapper is foresight (you hand it the whole pipeline string).
-sh-tea is hindsight bolted onto everyday habits \(em no new command name to
+tea is hindsight bolted onto everyday habits \(em no new command name to
 remember, and agent instructions that already say
 .RB \*(lq grep | sort | tail \*(rq
 keep working.

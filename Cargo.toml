@@ -1,17 +1,17 @@
 [package]
-name = "sh-tea"
+name = "tea"
 version = "0.1.0"
 edition = "2021"
 description = "Transparent pipeline stage logger for stdin→stdout filters"
 license = "MIT"
 
 [[bin]]
-name = "sh-tea"
-path = "src/bin/sh_tea.rs"
+name = "tea"
+path = "src/bin/tea.rs"
 
 [[bin]]
-name = "sh-tea-wrap"
-path = "src/bin/sh_tea_wrap.rs"
+name = "tea-wrap"
+path = "src/bin/tea_wrap.rs"
 
 [dependencies]
 csv = "1.3"

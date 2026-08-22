@@ -1,4 +1,4 @@
-//! sh-tea-wrap TOOL REAL_BIN [args...] — transparent tee for pipeline stages.
+//! tea-wrap TOOL REAL_BIN [args...] — transparent tee for pipeline stages.
 
 use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
@@ -6,14 +6,14 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use sh_tea::{
+use tea::{
     announce, copy_stdin_to_proc_and_log, discover_pipeline_siblings, load_config, load_tools,
     make_logfile_path, register_log, should_activate, strip_tea_flags, tool_config, Config, ToolCfg,
 };
 
 fn passthrough_exec(real: &str, args: &[String]) -> ! {
     let err = Command::new(real).args(args).exec();
-    eprintln!("sh-tea-wrap: exec failed: {err}");
+    eprintln!("tea-wrap: exec failed: {err}");
     std::process::exit(127);
 }
 
@@ -21,7 +21,7 @@ fn run_wrapped(tool: &str, real: &str, args: &[String], tcfg: &ToolCfg) -> i32 {
     let logfile = match make_logfile_path() {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("sh-tea-wrap: logfile: {e}");
+            eprintln!("tea-wrap: logfile: {e}");
             return 1;
         }
     };
@@ -37,7 +37,7 @@ fn run_wrapped(tool: &str, real: &str, args: &[String], tcfg: &ToolCfg) -> i32 {
     {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("sh-tea-wrap: spawn {real}: {e}");
+            eprintln!("tea-wrap: spawn {real}: {e}");
             return 127;
         }
     };
@@ -50,7 +50,7 @@ fn run_wrapped(tool: &str, real: &str, args: &[String], tcfg: &ToolCfg) -> i32 {
         {
             Ok(f) => f,
             Err(e) => {
-                eprintln!("sh-tea-wrap: open logfile: {e}");
+                eprintln!("tea-wrap: open logfile: {e}");
                 let _ = child.kill();
                 return 1;
             }
@@ -64,7 +64,7 @@ fn run_wrapped(tool: &str, real: &str, args: &[String], tcfg: &ToolCfg) -> i32 {
                 0
             }
             Err(e) => {
-                eprintln!("sh-tea-wrap: copy stdin: {e}");
+                eprintln!("tea-wrap: copy stdin: {e}");
                 let _ = child.kill();
                 return 1;
             }
@@ -88,7 +88,7 @@ fn run_wrapped(tool: &str, real: &str, args: &[String], tcfg: &ToolCfg) -> i32 {
         Some(&siblings),
     ) {
         Ok(row) => announce(&row, quiet),
-        Err(e) => eprintln!("sh-tea-wrap: register log: {e}"),
+        Err(e) => eprintln!("tea-wrap: register log: {e}"),
     }
     rc
 }
@@ -96,7 +96,7 @@ fn run_wrapped(tool: &str, real: &str, args: &[String], tcfg: &ToolCfg) -> i32 {
 fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     if argv.len() < 2 {
-        eprintln!("usage: sh-tea-wrap TOOL REAL_BIN [args...]");
+        eprintln!("usage: tea-wrap TOOL REAL_BIN [args...]");
         std::process::exit(2);
     }
 
@@ -106,7 +106,7 @@ fn main() {
 
     let tools = load_tools();
     if !tools.iter().any(|t| t == tool) {
-        eprintln!("sh-tea-wrap: unsupported tool: {tool}");
+        eprintln!("tea-wrap: unsupported tool: {tool}");
         std::process::exit(2);
     }
 
@@ -117,7 +117,7 @@ fn main() {
             .map(|m| m.permissions().mode() & 0o111 != 0)
             .unwrap_or(false);
     if !executable {
-        eprintln!("sh-tea-wrap: real binary not executable: {real}");
+        eprintln!("tea-wrap: real binary not executable: {real}");
         std::process::exit(127);
     }
 

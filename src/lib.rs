@@ -1,5 +1,5 @@
-//! sh-tea — transparent pipeline stage logger (library).
-//! Used by `sh-tea-wrap` and the `sh-tea` CLI.
+//! tea — transparent pipeline stage logger (library).
+//! Used by `tea-wrap` and the `tea` CLI.
 
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -62,8 +62,8 @@ const AGENT_COMM_SUBSTRINGS: &[&str] = &[
     "hermes-agent",
 ];
 
-const DEFAULT_CONFIG_TOML: &str = r#"# sh-tea — transparent pipeline logger
-# Per-tool [tools.*] sections are added from SH_TEA_DEFAULT_CONFIG when present.
+const DEFAULT_CONFIG_TOML: &str = r#"# tea — transparent pipeline logger
+# Per-tool [tools.*] sections are added from TEA_DEFAULT_CONFIG when present.
 
 [defaults]
 default-interactive = true
@@ -120,7 +120,7 @@ struct RawConfig {
 pub type CsvRow = HashMap<String, String>;
 
 pub fn load_tools() -> Vec<String> {
-    if let Ok(path) = env::var("SH_TEA_TOOLS_JSON") {
+    if let Ok(path) = env::var("TEA_TOOLS_JSON") {
         if let Ok(text) = fs::read_to_string(&path) {
             if let Ok(data) = serde_json::from_str::<serde_json::Value>(&text) {
                 if let Some(obj) = data.as_object() {
@@ -139,15 +139,15 @@ pub fn load_tools() -> Vec<String> {
 pub fn config_path() -> PathBuf {
     if let Ok(xdg) = env::var("XDG_CONFIG_HOME") {
         if !xdg.is_empty() {
-            return PathBuf::from(xdg).join("sh-tea").join("config.toml");
+            return PathBuf::from(xdg).join("tea").join("config.toml");
         }
     }
     let home = env::var("HOME").unwrap_or_else(|_| String::from("/"));
-    PathBuf::from(home).join(".config").join("sh-tea").join("config.toml")
+    PathBuf::from(home).join(".config").join("tea").join("config.toml")
 }
 
 fn default_config_text() -> String {
-    if let Ok(path) = env::var("SH_TEA_DEFAULT_CONFIG") {
+    if let Ok(path) = env::var("TEA_DEFAULT_CONFIG") {
         if let Ok(text) = fs::read_to_string(&path) {
             return text;
         }
@@ -239,7 +239,7 @@ pub fn load_config() -> Config {
     let raw: RawConfig = match toml::from_str(&text) {
         Ok(r) => r,
         Err(exc) => {
-            eprintln!("sh-tea: warning: bad config {}: {exc}", path.display());
+            eprintln!("tea: warning: bad config {}: {exc}", path.display());
             RawConfig {
                 defaults: HashMap::new(),
                 tools: HashMap::new(),
@@ -339,7 +339,7 @@ pub fn parent_is_running_script() -> bool {
 }
 
 pub fn is_interactive_session() -> bool {
-    if env_truthy("SH_TEA_INTERACTIVE") {
+    if env_truthy("TEA_INTERACTIVE") {
         return true;
     }
     if env::var("CI").map(|v| !v.trim().is_empty()).unwrap_or(false) {
@@ -354,7 +354,7 @@ pub fn is_interactive_session() -> bool {
 }
 
 pub fn is_agentic() -> bool {
-    if env_truthy("SH_TEA_AGENT") {
+    if env_truthy("TEA_AGENT") {
         return true;
     }
     for key in AGENT_ENV_MARKERS {
@@ -448,8 +448,8 @@ pub fn strip_tea_flags(argv: &[String]) -> (Vec<String>, bool, bool) {
 /// systemd sets INVOCATION_ID on every process it spawns as a unit (services,
 /// timers' triggered services, etc.) — unlike the AGENT_ENV_MARKERS, it can't
 /// collide with unrelated user env vars. Background units never have a
-/// meaningful place for sh-tea's cwd index (./logs.csv) and should never
-/// auto-activate sh-tea, even if they happen to inherit an agent-like env var
+/// meaningful place for tea's cwd index (./logs.csv) and should never
+/// auto-activate tea, even if they happen to inherit an agent-like env var
 /// or run under a comm name that matches AGENT_COMM_SUBSTRINGS.
 fn running_as_systemd_unit() -> bool {
     env::var("INVOCATION_ID")
@@ -464,10 +464,10 @@ pub fn should_activate(tool: &str, cfg: &Config, force_on: bool, force_off: bool
     if force_on {
         return true;
     }
-    if env_truthy("SH_TEA_OFF") {
+    if env_truthy("TEA_OFF") {
         return false;
     }
-    if env_truthy("SH_TEA_FORCE") {
+    if env_truthy("TEA_FORCE") {
         return true;
     }
     if running_as_systemd_unit() {
@@ -522,7 +522,7 @@ fn display_cmdline(parts: &[String]) -> Option<String> {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("");
-        if base == "sh-tea-wrap" && i + 2 < parts.len() {
+        if base == "tea-wrap" && i + 2 < parts.len() {
             let tool = &parts[i + 1];
             let args = &parts[i + 3..];
             return Some(format_argv(tool, args));
@@ -674,15 +674,15 @@ pub fn ensure_gitignore(cwd: &Path, tcfg: &ToolCfg) {
     let mut f = match OpenOptions::new().create(true).append(true).open(&gi) {
         Ok(f) => f,
         Err(exc) => {
-            eprintln!("sh-tea: warning: could not update .gitignore: {exc}");
+            eprintln!("tea: warning: could not update .gitignore: {exc}");
             return;
         }
     };
     if !existing.is_empty() && !existing.ends_with('\n') {
         let _ = writeln!(f);
     }
-    if !present.iter().any(|p| p.contains("# sh-tea")) {
-        let _ = writeln!(f, "\n# sh-tea — transparent pipeline logs");
+    if !present.iter().any(|p| p.contains("# tea")) {
+        let _ = writeln!(f, "\n# tea — transparent pipeline logs");
     }
     for item in to_add {
         let _ = writeln!(f, "{item}");
@@ -909,13 +909,13 @@ pub fn register_log(
 }
 
 pub fn announce(row: &CsvRow, quiet: bool) {
-    if quiet || env_truthy("SH_TEA_QUIET") {
+    if quiet || env_truthy("TEA_QUIET") {
         return;
     }
     let id = row.get("id").map(|s| s.as_str()).unwrap_or("?");
     let logfile = row.get("logfile").map(|s| s.as_str()).unwrap_or("?");
     let command = row.get("command").map(|s| s.as_str()).unwrap_or("?");
-    eprintln!("[sh-tea] --id {id} {logfile} | {command}");
+    eprintln!("[tea] --id {id} {logfile} | {command}");
 }
 
 pub fn list_rows(cwd: Option<&Path>) -> Vec<CsvRow> {

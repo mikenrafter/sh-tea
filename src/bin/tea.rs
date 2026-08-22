@@ -1,16 +1,16 @@
-//! sh-tea — inspect / manage transparent pipeline logs.
+//! tea — inspect / manage transparent pipeline logs.
 
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process;
 
-use sh_tea::{
+use tea::{
     ensure_user_config, in_git_repo, is_agentic, is_interactive_session, last_row, list_rows,
     load_config, load_tools, parent_is_running_script, should_activate, tool_config, CSV_FIELDS,
 };
 
 const USAGE: &str = "\
-sh-tea — transparent pipeline stage logger
+tea — transparent pipeline stage logger
 
 Wrappers shadow stdin→stdout filter utilities (grep, sort, sed, …). When
 activated they copy stdin to a mktemp --suffix .tea file (usually under /tmp)
@@ -22,8 +22,8 @@ Activation (first match wins):
   agentic session       auto on (unless manual-only)
   interactive session   auto on when default-interactive = true
 
-Config: ~/.config/sh-tea/config.toml  (created on first use)
-See:    man sh-tea
+Config: ~/.config/tea/config.toml  (created on first use)
+See:    man tea
 ";
 
 fn cmd_last() -> i32 {
@@ -33,7 +33,7 @@ fn cmd_last() -> i32 {
             0
         }
         None => {
-            eprintln!("sh-tea: no log records in ./logs.csv");
+            eprintln!("tea: no log records in ./logs.csv");
             1
         }
     }
@@ -42,7 +42,7 @@ fn cmd_last() -> i32 {
 fn cmd_list() -> i32 {
     let rows = list_rows(None);
     if rows.is_empty() {
-        eprintln!("sh-tea: no log records in ./logs.csv");
+        eprintln!("tea: no log records in ./logs.csv");
         return 1;
     }
     let mut wtr = csv::WriterBuilder::new()
@@ -67,14 +67,14 @@ fn cmd_list() -> i32 {
 fn cmd_show(id: Option<&str>) -> i32 {
     let rows = list_rows(None);
     if rows.is_empty() {
-        eprintln!("sh-tea: no log records in ./logs.csv");
+        eprintln!("tea: no log records in ./logs.csv");
         return 1;
     }
     let row = if let Some(want) = id {
         match rows.iter().find(|r| r.get("id").map(|s| s.as_str()) == Some(want)) {
             Some(r) => r,
             None => {
-                eprintln!("sh-tea: no record id={want}");
+                eprintln!("tea: no record id={want}");
                 return 1;
             }
         }
@@ -92,7 +92,7 @@ fn cmd_show(id: Option<&str>) -> i32 {
             0
         }
         Err(_) => {
-            eprintln!("sh-tea: missing logfile: {}", path.display());
+            eprintln!("tea: missing logfile: {}", path.display());
             1
         }
     }
@@ -105,7 +105,7 @@ fn cmd_config() -> i32 {
             0
         }
         Err(e) => {
-            eprintln!("sh-tea: config: {e}");
+            eprintln!("tea: config: {e}");
             1
         }
     }
@@ -114,7 +114,7 @@ fn cmd_config() -> i32 {
 fn cmd_which(tool: &str) -> i32 {
     let tools = load_tools();
     if !tools.iter().any(|t| t == tool) {
-        eprintln!("sh-tea: unknown tool: {tool}");
+        eprintln!("tea: unknown tool: {tool}");
         return 2;
     }
     let cfg = load_config();
@@ -155,7 +155,7 @@ fn main() {
         "config" => cmd_config(),
         "which" => {
             let Some(tool) = argv.get(1) else {
-                eprintln!("usage: sh-tea which TOOL");
+                eprintln!("usage: tea which TOOL");
                 process::exit(2);
             };
             cmd_which(tool)
