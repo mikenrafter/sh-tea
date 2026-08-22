@@ -110,18 +110,19 @@ tea show [id]       # print a logfile's contents (default: most recent)
 tea config          # ensure ~/.config/tea/config.toml exists, print its path
 tea which TOOL      # debug: would activation fire for TOOL right now, and why
                     # (at the shell prompt interactive=false is normal; pipe in:
-                    #  echo x | tea which TOOL, or read interactive_if_piped)
+                    #  (same evaluate_activation() gate as tea-wrap; use --piped
+                    #  or echo x | tea which TOOL for pipeline preview)
 ```
 
 ### When does it actually activate?
 
-Precedence, highest first (see `src/lib.rs::should_activate`):
+Precedence, highest first (see `src/lib.rs::evaluate_activation`):
 
 1. `--coffee` / `--no-tea` — force off (wins over everything)
 2. `--tea` — force on (wins over all env vars and auto-detect gates)
 3. `TEA_OFF=1` — env force off
 4. `TEA_FORCE=1` — env force on
-5. config / auto-detect:
+5. config / auto-detect (only on **user pipeline stages** — see below):
    - agentic session (detected via env vars like `CURSOR_AGENT`, `CLAUDECODE`,
      `COPILOT_CLI`, `AEGIS`, `HERMES_AGENT`, or a parent process name match)
      → activates
@@ -132,11 +133,14 @@ Precedence, highest first (see `src/lib.rs::should_activate`):
      → activates when `default-interactive = true` in config (the default)
    - otherwise → no-op, zero extra stderr, real binary runs untouched
 
-`tea which TOOL` at the shell prompt normally reports `interactive=false`
-because stdin is still your TTY. That is expected — real pipeline stages have
-piped stdin. To preview activation without running a pipeline, check
-`interactive_if_piped` / `would_activate_if_piped`, pass `--piped`, or run
-`echo x | tea which TOOL`.
+`tea which TOOL` calls the **same** `evaluate_activation()` gate as `tea-wrap`.
+`would_activate` and `outcome` come directly from that decision; the other
+lines are the runtime signals collected during that single evaluation (not
+recomputed separately).
+
+At the shell prompt, `stdin_tty=true` so `interactive_session=false` — that is
+expected. To preview a pipeline stage, pass `--piped`, or run
+`echo x | tea which TOOL` so stdin matches what the wrapped tool would see.
 
 Fish users: the sh-tea package installs a hook at
 `share/fish/vendor_conf.d/tea-user-pipe.fish` that sets `TEA_USER_PIPE=1`

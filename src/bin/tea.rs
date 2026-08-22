@@ -5,11 +5,8 @@ use std::path::PathBuf;
 use std::process;
 
 use tea::{
-    ensure_user_config, in_git_repo, invocation_id, is_agentic, is_interactive_if_piped,
-    is_interactive_session, is_user_pipeline_stage, last_row, list_rows, load_config, load_tools,
-    parent_cmdline_display, parent_comm, parent_is_running_script, running_as_systemd_unit,
-    shell_level_display, should_activate, systemd_suppresses_activation,
-    tea_user_pipe_set, tool_config, would_activate_if_piped, CSV_FIELDS,
+    ensure_user_config, evaluate_activation, last_row, list_rows, load_config, load_tools,
+    tool_config, ActivationContext, ActivationOutcome, ActivationReport, Config, CSV_FIELDS,
 };
 
 const USAGE: &str = "\
@@ -22,8 +19,8 @@ and index rows in ./logs.csv, then run the real command unchanged.
 Activation (first match wins):
   --coffee / --no-tea   force off
   --tea                 force on
-  agentic session       auto on (unless manual-only)
-  interactive session   auto on when default-interactive = true
+  agentic user pipeline auto on (unless manual-only)
+  interactive user pipeline auto on when default-interactive = true
 
 Config: ~/.config/tea/config.toml  (created on first use)
 See:    man tea
@@ -135,58 +132,45 @@ fn parse_which_args(extra_args: &[String]) -> (Vec<String>, bool, bool, bool) {
     (rest, force_on, force_off, simulate_piped)
 }
 
-fn cmd_which(tool: &str, extra_args: &[String]) -> i32 {
-    let tools = load_tools();
-    if !tools.iter().any(|t| t == tool) {
-        eprintln!("tea: unknown tool: {tool}");
-        return 2;
+fn outcome_label(outcome: &ActivationOutcome) -> &'static str {
+    match outcome {
+        ActivationOutcome::ActivatedForceTea => "activated:force_tea",
+        ActivationOutcome::ActivatedTeaForce => "activated:tea_force",
+        ActivationOutcome::ActivatedAgentic => "activated:agentic",
+        ActivationOutcome::ActivatedInteractive => "activated:interactive",
+        ActivationOutcome::SuppressedForceOff => "suppressed:force_off",
+        ActivationOutcome::SuppressedTeaOff => "suppressed:tea_off",
+        ActivationOutcome::SuppressedSystemd => "suppressed:systemd",
+        ActivationOutcome::SuppressedDisabled => "suppressed:disabled",
+        ActivationOutcome::SuppressedOnlyInGitRepos => "suppressed:only_in_git_repos",
+        ActivationOutcome::SuppressedOnlyOutsideGitRepos => "suppressed:only_outside_git_repos",
+        ActivationOutcome::SuppressedManualOnly => "suppressed:manual_only",
+        ActivationOutcome::SuppressedParentScript => "suppressed:parent_script",
+        ActivationOutcome::SuppressedNotAuto => "suppressed:not_auto",
     }
-    let (_, force_on, force_off, simulate_piped) = parse_which_args(extra_args);
-    let cfg = load_config();
-    let on = if simulate_piped {
-        would_activate_if_piped(tool, &cfg, force_on, force_off)
-    } else {
-        should_activate(tool, &cfg, force_on, force_off)
-    };
-    let interactive = if simulate_piped {
-        is_interactive_if_piped()
-    } else {
-        is_interactive_session()
-    };
-    let tcfg = tool_config(&cfg, tool);
+}
+
+fn print_activation_report(tool: &str, cfg: &Config, report: &ActivationReport) {
+    let tcfg = tool_config(cfg, tool);
+    let f = &report.factors;
     println!("tool={tool}");
-    println!("would_activate={on}");
-    println!("force_tea={force_on}");
-    println!("force_off={force_off}");
-    println!("interactive={interactive}");
-    if !simulate_piped {
-        println!("interactive_if_piped={}", is_interactive_if_piped());
-        println!(
-            "would_activate_if_piped={}",
-            would_activate_if_piped(tool, &cfg, force_on, force_off)
-        );
-    }
-    println!("agentic={}", is_agentic());
-    println!("parent_script={}", parent_is_running_script());
-    println!("systemd_unit={}", running_as_systemd_unit());
-    println!(
-        "invocation_id={}",
-        invocation_id().unwrap_or_else(|| "-".into())
-    );
-    println!("systemd_suppress={}", systemd_suppresses_activation());
-    println!("user_pipeline={}", is_user_pipeline_stage());
-    println!("tea_user_pipe={}", tea_user_pipe_set());
-    println!(
-        "parent_comm={}",
-        parent_comm().unwrap_or_else(|| "-".into())
-    );
-    println!("parent_cmdline={}", parent_cmdline_display());
-    println!(
-        "term_program={}",
-        std::env::var("TERM_PROGRAM").unwrap_or_else(|_| "-".into())
-    );
-    println!("shlvl={}", shell_level_display());
-    println!("in_git_repo={}", in_git_repo(None));
+    println!("would_activate={}", report.activate);
+    println!("outcome={}", outcome_label(&report.outcome));
+    println!("stdin_tty={}", f.stdin_tty);
+    println!("stderr_tty={}", f.stderr_tty);
+    println!("interactive_session={}", f.interactive_session);
+    println!("user_pipeline={}", f.user_pipeline);
+    println!("tea_user_pipe={}", f.tea_user_pipe);
+    println!("agentic={}", f.agentic);
+    println!("parent_script={}", f.parent_script);
+    println!("systemd_unit={}", f.systemd_unit);
+    println!("invocation_id={}", f.invocation_id);
+    println!("systemd_suppress={}", f.systemd_suppress);
+    println!("parent_comm={}", f.parent_comm);
+    println!("parent_cmdline={}", f.parent_cmdline);
+    println!("term_program={}", f.term_program);
+    println!("shlvl={}", f.shlvl);
+    println!("in_git_repo={}", f.in_git_repo);
     println!("config={}", cfg.path);
     println!("  enabled={}", tcfg.enabled);
     println!("  only-in-git-repos={}", tcfg.only_in_git_repos);
@@ -196,6 +180,23 @@ fn cmd_which(tool: &str, extra_args: &[String]) -> i32 {
     println!("  manual-only={}", tcfg.manual_only);
     println!("  max-log-records={}", tcfg.max_log_records);
     println!("  quiet={}", tcfg.quiet);
+}
+
+fn cmd_which(tool: &str, extra_args: &[String]) -> i32 {
+    let tools = load_tools();
+    if !tools.iter().any(|t| t == tool) {
+        eprintln!("tea: unknown tool: {tool}");
+        return 2;
+    }
+    let (_, force_on, force_off, simulate_piped) = parse_which_args(extra_args);
+    let cfg = load_config();
+    let ctx = if simulate_piped {
+        ActivationContext::piped_stdin()
+    } else {
+        ActivationContext::current()
+    };
+    let report = evaluate_activation(tool, &cfg, force_on, force_off, ctx);
+    print_activation_report(tool, &cfg, &report);
     0
 }
 

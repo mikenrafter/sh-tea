@@ -7,8 +7,9 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use tea::{
-    announce, copy_stdin_to_proc_and_log, discover_pipeline_siblings, load_config, load_tools,
-    make_logfile_path, register_log, should_activate, strip_tea_flags, tool_config, Config, ToolCfg,
+    announce, copy_stdin_to_proc_and_log, discover_pipeline_siblings, evaluate_activation,
+    load_config, load_tools, make_logfile_path, register_log, strip_tea_flags, tool_config,
+    ActivationContext, Config, ToolCfg,
 };
 
 fn passthrough_exec(real: &str, args: &[String]) -> ! {
@@ -125,7 +126,8 @@ fn main() {
     let cfg: Config = load_config();
     let tcfg = tool_config(&cfg, tool);
 
-    if !should_activate(tool, &cfg, force_on, force_off) {
+    let report = evaluate_activation(tool, &cfg, force_on, force_off, ActivationContext::current());
+    if !report.activate {
         passthrough_exec(real, &passthrough);
     }
 

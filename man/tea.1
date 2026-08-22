@@ -102,9 +102,10 @@ activates.
 .TP
 .B agentic session
 Detected via common agent environment variables
-.RI ( CURSOR_AGENT , CLAUDECODE , COPILOT_CLI , AEGIS , HERMES_AGENT , AGENT , ...)
+.RI ( CURSOR_AGENT , CLAUDECODE , COPILOT_CLI , AEGIS , HERMES_AGENT , ...)
 or parent process names. Also
 .BR TEA_AGENT=1 .
+Auto-activates only on user pipeline stages (same gate as interactive).
 .TP
 .B interactive session
 When
@@ -123,15 +124,21 @@ nor
 .BR TERM_PROGRAM ).
 .TP
 .B tea which
-At the shell prompt,
-.B interactive
-is usually false (stdin is still the TTY). Use
-.BR interactive_if_piped ,
-.BR would_activate_if_piped ,
-.B --piped ,
+Uses the same
+.B evaluate_activation()
+gate as
+.BR tea-wrap .
+.B would_activate
+and
+.B outcome
+are the decision; other lines are runtime signals collected during that
+evaluation. At the shell prompt,
+.B stdin_tty
+is usually true. Pass
+.B --piped
 or pipe into
 .B tea\ which
-to preview pipeline activation.
+to match pipeline stdin.
 .TP
 .B --tea / --coffee
 Only work on tea-wrapped binaries from this package (must be ahead of the
@@ -222,17 +229,19 @@ Ensure and print the path to
 .IR config.toml .
 .TP
 .B tea which TOOL
-Print whether activation would fire for
-.I TOOL
-and the effective config (including
+Print the result of the same
+.B evaluate_activation()
+gate
+.B tea-wrap
+uses: 
+.BR would_activate ,
+.BR outcome ,
+runtime signals collected during that evaluation, and effective config (including
 .BR systemd_unit ,
 .BR invocation_id ,
-and
 .BR systemd_suppress ,
 .BR user_pipeline ,
 .BR tea_user_pipe ,
-.BR interactive_if_piped ,
-.BR would_activate_if_piped ,
 and optional
 .BR --tea / --coffee / --no-tea / --piped
 flags).

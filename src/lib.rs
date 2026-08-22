@@ -566,9 +566,207 @@ pub fn is_interactive_session() -> bool {
     is_interactive_session_inner(false)
 }
 
-/// Like [`is_interactive_session`], but treats stdin as piped (non-TTY).
-pub fn is_interactive_if_piped() -> bool {
-    is_interactive_session_inner(true)
+/// Optional stdin override for [`evaluate_activation`] (used by `tea which --piped`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActivationContext {
+    simulate_piped_stdin: bool,
+}
+
+impl ActivationContext {
+    /// Real stdin/stderr TTY state for this process — what `tea-wrap` uses.
+    pub fn current() -> Self {
+        Self {
+            simulate_piped_stdin: false,
+        }
+    }
+
+    /// Treat stdin as a pipe while keeping all other runtime signals unchanged.
+    pub fn piped_stdin() -> Self {
+        Self {
+            simulate_piped_stdin: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActivationOutcome {
+    ActivatedForceTea,
+    ActivatedTeaForce,
+    ActivatedAgentic,
+    ActivatedInteractive,
+    SuppressedForceOff,
+    SuppressedTeaOff,
+    SuppressedSystemd,
+    SuppressedDisabled,
+    SuppressedOnlyInGitRepos,
+    SuppressedOnlyOutsideGitRepos,
+    SuppressedManualOnly,
+    SuppressedParentScript,
+    SuppressedNotAuto,
+}
+
+/// Runtime signals collected once during [`evaluate_activation`] for debug display.
+#[derive(Debug, Clone)]
+pub struct ActivationFactors {
+    pub stdin_tty: bool,
+    pub stderr_tty: bool,
+    pub interactive_session: bool,
+    pub user_pipeline: bool,
+    pub tea_user_pipe: bool,
+    pub agentic: bool,
+    pub parent_script: bool,
+    pub systemd_unit: bool,
+    pub systemd_suppress: bool,
+    pub invocation_id: String,
+    pub term_program: String,
+    pub shlvl: String,
+    pub parent_comm: String,
+    pub parent_cmdline: String,
+    pub in_git_repo: bool,
+    pub default_interactive: bool,
+    pub manual_only: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ActivationReport {
+    pub activate: bool,
+    pub outcome: ActivationOutcome,
+    pub factors: ActivationFactors,
+}
+
+fn stdin_is_tty(ctx: ActivationContext) -> bool {
+    if ctx.simulate_piped_stdin {
+        return false;
+    }
+    unsafe { libc::isatty(libc::STDIN_FILENO) == 1 }
+}
+
+fn collect_activation_factors(ctx: ActivationContext, tcfg: &ToolCfg) -> ActivationFactors {
+    ActivationFactors {
+        stdin_tty: stdin_is_tty(ctx),
+        stderr_tty: unsafe { libc::isatty(libc::STDERR_FILENO) == 1 },
+        interactive_session: is_interactive_session_inner(ctx.simulate_piped_stdin),
+        user_pipeline: is_user_pipeline_stage(),
+        tea_user_pipe: tea_user_pipe_set(),
+        agentic: is_agentic(),
+        parent_script: parent_is_running_script(),
+        systemd_unit: running_as_systemd_unit(),
+        systemd_suppress: systemd_suppresses_activation(),
+        invocation_id: invocation_id().unwrap_or_else(|| "-".into()),
+        term_program: env::var("TERM_PROGRAM").unwrap_or_else(|_| "-".into()),
+        shlvl: shell_level_display(),
+        parent_comm: parent_comm().unwrap_or_else(|| "-".into()),
+        parent_cmdline: parent_cmdline_display(),
+        in_git_repo: in_git_repo(None),
+        default_interactive: tcfg.default_interactive,
+        manual_only: tcfg.manual_only,
+    }
+}
+
+/// Single activation gate shared by `tea-wrap` and `tea which`.
+pub fn evaluate_activation(
+    tool: &str,
+    cfg: &Config,
+    force_on: bool,
+    force_off: bool,
+    ctx: ActivationContext,
+) -> ActivationReport {
+    let tcfg = tool_config(cfg, tool);
+    let factors = collect_activation_factors(ctx, &tcfg);
+
+    if force_off {
+        return ActivationReport {
+            activate: false,
+            outcome: ActivationOutcome::SuppressedForceOff,
+            factors,
+        };
+    }
+    if force_on {
+        return ActivationReport {
+            activate: true,
+            outcome: ActivationOutcome::ActivatedForceTea,
+            factors,
+        };
+    }
+    if env_truthy("TEA_OFF") {
+        return ActivationReport {
+            activate: false,
+            outcome: ActivationOutcome::SuppressedTeaOff,
+            factors,
+        };
+    }
+    if env_truthy("TEA_FORCE") {
+        return ActivationReport {
+            activate: true,
+            outcome: ActivationOutcome::ActivatedTeaForce,
+            factors,
+        };
+    }
+    if factors.systemd_suppress {
+        return ActivationReport {
+            activate: false,
+            outcome: ActivationOutcome::SuppressedSystemd,
+            factors,
+        };
+    }
+    if !tcfg.enabled {
+        return ActivationReport {
+            activate: false,
+            outcome: ActivationOutcome::SuppressedDisabled,
+            factors,
+        };
+    }
+    if tcfg.only_in_git_repos && !factors.in_git_repo {
+        return ActivationReport {
+            activate: false,
+            outcome: ActivationOutcome::SuppressedOnlyInGitRepos,
+            factors,
+        };
+    }
+    if tcfg.only_outside_git_repos && factors.in_git_repo {
+        return ActivationReport {
+            activate: false,
+            outcome: ActivationOutcome::SuppressedOnlyOutsideGitRepos,
+            factors,
+        };
+    }
+    if tcfg.manual_only {
+        return ActivationReport {
+            activate: false,
+            outcome: ActivationOutcome::SuppressedManualOnly,
+            factors,
+        };
+    }
+    if factors.parent_script {
+        return ActivationReport {
+            activate: false,
+            outcome: ActivationOutcome::SuppressedParentScript,
+            factors,
+        };
+    }
+
+    if factors.user_pipeline {
+        if factors.agentic {
+            return ActivationReport {
+                activate: true,
+                outcome: ActivationOutcome::ActivatedAgentic,
+                factors,
+            };
+        }
+        if factors.default_interactive && factors.interactive_session {
+            return ActivationReport {
+                activate: true,
+                outcome: ActivationOutcome::ActivatedInteractive,
+                factors,
+            };
+        }
+    }
+
+    ActivationReport {
+        activate: false,
+        outcome: ActivationOutcome::SuppressedNotAuto,
+        factors,
+    }
 }
 
 pub fn is_agentic() -> bool {
@@ -691,65 +889,7 @@ pub fn systemd_suppresses_activation() -> bool {
 }
 
 pub fn should_activate(tool: &str, cfg: &Config, force_on: bool, force_off: bool) -> bool {
-    should_activate_inner(tool, cfg, force_on, force_off, false)
-}
-
-/// Full [`should_activate`] evaluation with stdin treated as piped (non-TTY).
-pub fn would_activate_if_piped(tool: &str, cfg: &Config, force_on: bool, force_off: bool) -> bool {
-    should_activate_inner(tool, cfg, force_on, force_off, true)
-}
-
-fn should_activate_inner(
-    tool: &str,
-    cfg: &Config,
-    force_on: bool,
-    force_off: bool,
-    simulate_piped_stdin: bool,
-) -> bool {
-    if force_off {
-        return false;
-    }
-    if force_on {
-        return true;
-    }
-    if env_truthy("TEA_OFF") {
-        return false;
-    }
-    if env_truthy("TEA_FORCE") {
-        return true;
-    }
-    if systemd_suppresses_activation() {
-        return false;
-    }
-
-    let tcfg = tool_config(cfg, tool);
-    if !tcfg.enabled {
-        return false;
-    }
-
-    let inside = in_git_repo(None);
-    if tcfg.only_in_git_repos && !inside {
-        return false;
-    }
-    if tcfg.only_outside_git_repos && inside {
-        return false;
-    }
-    if tcfg.manual_only {
-        return false;
-    }
-    if parent_is_running_script() {
-        return false;
-    }
-    if is_agentic() {
-        return true;
-    }
-    if tcfg.default_interactive
-        && is_interactive_session_inner(simulate_piped_stdin)
-        && is_user_pipeline_stage()
-    {
-        return true;
-    }
-    false
+    evaluate_activation(tool, cfg, force_on, force_off, ActivationContext::current()).activate
 }
 
 fn shell_quote(s: &str) -> String {
