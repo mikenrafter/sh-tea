@@ -176,7 +176,8 @@
     '';
 
     teaHooks = pkgs.runCommand "tea-hooks" { } ''
-      mkdir -p $out/share/fish/vendor_conf.d
+      mkdir -p $out/share/fish/vendor_conf.d $out/share/fish/vendor_functions.d
+      cp ${./hooks/grep.fish} $out/share/fish/vendor_functions.d/grep.fish
       cp ${./hooks/tea-user-pipe.fish} $out/share/fish/vendor_conf.d/tea-user-pipe.fish
     '';
 

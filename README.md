@@ -154,6 +154,12 @@ package (they must be ahead of the real `grep`, `sed`, etc. on `PATH`). The
 wrapper strips the flag before execing the real tool; passing `--tea` to an
 unwrapped system binary will fail.
 
+Fish ships a built-in `grep` **function** (with `--color=auto`) that shadows
+PATH wrappers — only `grep` among sh-tea's tools; nothing else overlaps.
+The package installs `share/fish/vendor_functions.d/grep.fish`, which
+autoloads before embedded `grep.fish` and delegates via `command grep` so
+the tea wrapper on PATH is used. Until that loads, use `command grep`.
+
 Background systemd units (`INVOCATION_ID` set and stderr not a TTY)
 suppress activation. User-session processes (shells, terminals) inherit
 `INVOCATION_ID` from `user@.service` but keep stderr on a TTY, so they
