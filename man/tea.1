@@ -116,7 +116,24 @@ nor a terminal emulator's internal
 .BR fish\ -c /
 .BR sh\ -c
 pipeline under
+.BR TERM_PROGRAM ,
+nor a deeply nested subprocess with
+.B SHLVL
+≥ 5 under
 .BR TERM_PROGRAM ).
+.B TEA_USER_PIPE=1
+(from the fish hook or set manually) also marks user pipeline stages.
+.TP
+.B tea which
+At the shell prompt,
+.B interactive
+is usually false (stdin is still the TTY). Use
+.BR interactive_if_piped ,
+.BR would_activate_if_piped ,
+.B --piped ,
+or pipe into
+.B tea\ which
+to preview pipeline activation.
 .TP
 .B --tea / --coffee
 Only work on tea-wrapped binaries from this package (must be ahead of the
@@ -215,8 +232,11 @@ and the effective config (including
 and
 .BR systemd_suppress ,
 .BR user_pipeline ,
+.BR tea_user_pipe ,
+.BR interactive_if_piped ,
+.BR would_activate_if_piped ,
 and optional
-.BR --tea / --coffee / --no-tea
+.BR --tea / --coffee / --no-tea / --piped
 flags).
 .
 .SH ENVIRONMENT
@@ -236,6 +256,13 @@ Suppress the stderr blurb.
 .TP
 .B TEA_AGENT / TEA_INTERACTIVE
 Force agentic / interactive detection.
+.TP
+.B TEA_USER_PIPE
+When truthy, mark the process as a user pipeline stage for interactive
+auto-activation. Set by the fish hook shipped in
+.IR share/fish/vendor_conf.d/tea-user-pipe.fish
+(or manually). Does not bypass
+.B --coffee / --no-tea .
 .TP
 .B XDG_CONFIG_HOME
 Config root (default

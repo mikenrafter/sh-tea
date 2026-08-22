@@ -93,7 +93,7 @@ clear_logs() {
 isolate_env() {
   export HOME="$WORKDIR/home"
   export XDG_CONFIG_HOME="$WORKDIR/xdg"
-  unset TEA_FORCE TEA_AGENT TEA_INTERACTIVE || true
+  unset TEA_FORCE TEA_AGENT TEA_INTERACTIVE TEA_USER_PIPE || true
   for v in CURSOR_AGENT CURSOR_AGENT_ID CURSOR_INVOKED_AS CLAUDECODE CLAUDE_CODE \
     CLAUDE_AGENT COPILOT_CLI COPILOT_AGENT AEGIS AEGIS_QUEUE HERMES_AGENT \
     HERMES_PROFILE AGENT_TASK_ID OPENCODE_AGENT AGENT; do
@@ -414,6 +414,44 @@ if [[ -d "$WORKDIR/logfiles" ]]; then
   fail "logfiles/ directory was created (should not exist)"
 else
   pass "no ./logfiles/ directory"
+fi
+
+# ---------------------------------------------------------------------------
+# E. TEA_USER_PIPE + piped stdin auto-activation
+# ---------------------------------------------------------------------------
+echo "== E. TEA_USER_PIPE auto-activation =="
+
+clear_logs
+out_tmp="$("$MKTEMP" "$WORKDIR/out.XXXXXX")"
+set +e
+env -u TEA_OFF TEA_USER_PIPE=1 TEA_QUIET=1 "$TEA_OUT/bin/head" -n 2 <"$WORKDIR/stdin.txt" >"$out_tmp"
+tea_user_pipe_rc=$?
+set -e
+CAPTURED_OUT="$("$CAT" "$out_tmp"; printf x)"
+CAPTURED_OUT="${CAPTURED_OUT%x}"
+"$RM" -f "$out_tmp"
+if [[ "$tea_user_pipe_rc" -eq 0 && "$CAPTURED_OUT" == "$EXPECTED_HEAD" && "$(count_logs)" -ge 1 ]]; then
+  pass "TEA_USER_PIPE=1 + piped stdin activates"
+elif [[ ! -t 2 ]]; then
+  pass "TEA_USER_PIPE=1 + piped stdin (skipped: stderr not a TTY)"
+else
+  fail "TEA_USER_PIPE=1 should activate (rc=$tea_user_pipe_rc logs=$(count_logs) out=$(printf %q "$CAPTURED_OUT"))"
+fi
+
+# TEA_USER_PIPE does not bypass --coffee
+clear_logs
+out_tmp="$("$MKTEMP" "$WORKDIR/out.XXXXXX")"
+set +e
+env -u TEA_OFF TEA_USER_PIPE=1 TEA_QUIET=1 "$TEA_OUT/bin/head" --coffee -n 2 <"$WORKDIR/stdin.txt" >"$out_tmp"
+tea_user_pipe_rc=$?
+set -e
+CAPTURED_OUT="$("$CAT" "$out_tmp"; printf x)"
+CAPTURED_OUT="${CAPTURED_OUT%x}"
+"$RM" -f "$out_tmp"
+if [[ "$tea_user_pipe_rc" -eq 0 && "$CAPTURED_OUT" == "$EXPECTED_HEAD" && "$(count_logs)" -eq 0 ]]; then
+  pass "TEA_USER_PIPE=1 does not bypass --coffee"
+else
+  fail "TEA_USER_PIPE + --coffee should not log (rc=$tea_user_pipe_rc logs=$(count_logs))"
 fi
 
 echo

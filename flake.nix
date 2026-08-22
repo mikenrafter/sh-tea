@@ -175,9 +175,14 @@
       cp ${fishCompletion} $out/share/fish/vendor_completions.d/sh-tea.fish
     '';
 
+    teaHooks = pkgs.runCommand "tea-hooks" { } ''
+      mkdir -p $out/share/fish/vendor_conf.d
+      cp ${./hooks/tea-user-pipe.fish} $out/share/fish/vendor_conf.d/tea-user-pipe.fish
+    '';
+
     teaPkg = pkgs.symlinkJoin {
       name = "tea-0.1.0";
-      paths = [ teaCli teaAlias teaMan teaCompletions ] ++ wrapPkgs;
+      paths = [ teaCli teaAlias teaMan teaCompletions teaHooks ] ++ wrapPkgs;
       meta = with lib; {
         description = "Transparent pipeline stage logger for stdin→stdout filters";
         mainProgram = "tea";

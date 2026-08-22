@@ -402,29 +402,15 @@ fn shell_level() -> Option<u32> {
     env::var("SHLVL").ok().and_then(|v| v.parse().ok())
 }
 
-fn parent_is_warp_bootstrap_fish(argv: &[String]) -> bool {
-    argv0_base(argv) == "fish"
-        && argv.iter().any(|a| a == "--init-command")
-        && argv
-            .iter()
-            .any(|a| a.contains("InitShell") || a.contains("WARP_SESSION_ID"))
-}
-
 /// Warp and similar terminals spawn nested shell layers (InitShell bootstrap,
 /// command substitutions) before running internal sed/tr/od pipelines. User
-/// pipeline stages inherit SHLVL from the interactive shell (~2); internal
+/// pipeline stages inherit SHLVL from the interactive shell (~2–4); internal
 /// tooling is much deeper (the Warp echo path observed SHLVL=5).
 fn is_terminal_emulator_deep_subprocess() -> bool {
     if !term_program_is_emulator() {
         return false;
     }
-    let Some(level) = shell_level() else {
-        return false;
-    };
-    if level >= 4 {
-        return true;
-    }
-    false
+    shell_level().is_some_and(|level| level >= 5)
 }
 
 pub fn shell_level_display() -> String {
@@ -446,7 +432,15 @@ fn shell_argv_has_dash_c(argv: &[String]) -> bool {
 /// True when the immediate parent is the user's shell (or a shell `-c` one
 /// level below another shell). Terminal emulators' internal `sh -c` pipelines
 /// (Warp paste handling, etc.) are excluded.
+pub fn tea_user_pipe_set() -> bool {
+    env_truthy("TEA_USER_PIPE")
+}
+
 pub fn is_user_pipeline_stage() -> bool {
+    if tea_user_pipe_set() {
+        return true;
+    }
+
     let ppid = unsafe { libc::getppid() };
     if ppid <= 1 {
         return false;
@@ -458,14 +452,6 @@ pub fn is_user_pipeline_stage() -> bool {
     let parent_base = argv0_base(&parent_argv);
 
     if is_terminal_emulator_deep_subprocess() {
-        return false;
-    }
-
-    // Warp session fish: `--init-command` InitShell bootstrap, not a user pipe.
-    if term_program_is_emulator()
-        && parent_is_warp_bootstrap_fish(&parent_argv)
-        && shell_level().is_some_and(|n| n >= 3)
-    {
         return false;
     }
 
@@ -550,7 +536,7 @@ pub fn parent_is_running_script() -> bool {
     false
 }
 
-pub fn is_interactive_session() -> bool {
+fn is_interactive_session_inner(simulate_piped_stdin: bool) -> bool {
     if env_truthy("TEA_INTERACTIVE") {
         return true;
     }
@@ -561,8 +547,21 @@ pub fn is_interactive_session() -> bool {
     // must also be non-TTY (i.e. actually piped) so we don't activate when a
     // subprocess of a non-piped command happens to inherit the terminal.
     let stderr_tty = unsafe { libc::isatty(libc::STDERR_FILENO) == 1 };
-    let stdin_tty = unsafe { libc::isatty(libc::STDIN_FILENO) == 1 };
+    let stdin_tty = if simulate_piped_stdin {
+        false
+    } else {
+        unsafe { libc::isatty(libc::STDIN_FILENO) == 1 }
+    };
     stderr_tty && !stdin_tty
+}
+
+pub fn is_interactive_session() -> bool {
+    is_interactive_session_inner(false)
+}
+
+/// Like [`is_interactive_session`], but treats stdin as piped (non-TTY).
+pub fn is_interactive_if_piped() -> bool {
+    is_interactive_session_inner(true)
 }
 
 pub fn is_agentic() -> bool {
@@ -685,6 +684,21 @@ pub fn systemd_suppresses_activation() -> bool {
 }
 
 pub fn should_activate(tool: &str, cfg: &Config, force_on: bool, force_off: bool) -> bool {
+    should_activate_inner(tool, cfg, force_on, force_off, false)
+}
+
+/// Full [`should_activate`] evaluation with stdin treated as piped (non-TTY).
+pub fn would_activate_if_piped(tool: &str, cfg: &Config, force_on: bool, force_off: bool) -> bool {
+    should_activate_inner(tool, cfg, force_on, force_off, true)
+}
+
+fn should_activate_inner(
+    tool: &str,
+    cfg: &Config,
+    force_on: bool,
+    force_off: bool,
+    simulate_piped_stdin: bool,
+) -> bool {
     if force_off {
         return false;
     }
@@ -722,7 +736,10 @@ pub fn should_activate(tool: &str, cfg: &Config, force_on: bool, force_off: bool
     if is_agentic() {
         return true;
     }
-    if tcfg.default_interactive && is_interactive_session() && is_user_pipeline_stage() {
+    if tcfg.default_interactive
+        && is_interactive_session_inner(simulate_piped_stdin)
+        && is_user_pipeline_stage()
+    {
         return true;
     }
     false

@@ -5,10 +5,11 @@ use std::path::PathBuf;
 use std::process;
 
 use tea::{
-    ensure_user_config, in_git_repo, invocation_id, is_agentic, is_interactive_session,
-    is_user_pipeline_stage, last_row, list_rows, load_config, load_tools, parent_cmdline_display,
-    parent_comm, parent_is_running_script, running_as_systemd_unit, shell_level_display,
-    should_activate, strip_tea_flags, systemd_suppresses_activation, tool_config, CSV_FIELDS,
+    ensure_user_config, in_git_repo, invocation_id, is_agentic, is_interactive_if_piped,
+    is_interactive_session, is_user_pipeline_stage, last_row, list_rows, load_config, load_tools,
+    parent_cmdline_display, parent_comm, parent_is_running_script, running_as_systemd_unit,
+    shell_level_display, should_activate, systemd_suppresses_activation,
+    tea_user_pipe_set, tool_config, would_activate_if_piped, CSV_FIELDS,
 };
 
 const USAGE: &str = "\
@@ -113,21 +114,58 @@ fn cmd_config() -> i32 {
     }
 }
 
+fn parse_which_args(extra_args: &[String]) -> (Vec<String>, bool, bool, bool) {
+    let mut rest = Vec::new();
+    let mut force_on = false;
+    let mut force_off = false;
+    let mut simulate_piped = false;
+    for a in extra_args {
+        if a == "--tea" {
+            force_on = true;
+        } else if a == "--no-tea" || a == "--coffee" {
+            force_off = true;
+        } else if a == "--piped" {
+            simulate_piped = true;
+        } else if a == "--" {
+            break;
+        } else {
+            rest.push(a.clone());
+        }
+    }
+    (rest, force_on, force_off, simulate_piped)
+}
+
 fn cmd_which(tool: &str, extra_args: &[String]) -> i32 {
     let tools = load_tools();
     if !tools.iter().any(|t| t == tool) {
         eprintln!("tea: unknown tool: {tool}");
         return 2;
     }
-    let (_, force_on, force_off) = strip_tea_flags(extra_args);
+    let (_, force_on, force_off, simulate_piped) = parse_which_args(extra_args);
     let cfg = load_config();
-    let on = should_activate(tool, &cfg, force_on, force_off);
+    let on = if simulate_piped {
+        would_activate_if_piped(tool, &cfg, force_on, force_off)
+    } else {
+        should_activate(tool, &cfg, force_on, force_off)
+    };
+    let interactive = if simulate_piped {
+        is_interactive_if_piped()
+    } else {
+        is_interactive_session()
+    };
     let tcfg = tool_config(&cfg, tool);
     println!("tool={tool}");
     println!("would_activate={on}");
     println!("force_tea={force_on}");
     println!("force_off={force_off}");
-    println!("interactive={}", is_interactive_session());
+    println!("interactive={interactive}");
+    if !simulate_piped {
+        println!("interactive_if_piped={}", is_interactive_if_piped());
+        println!(
+            "would_activate_if_piped={}",
+            would_activate_if_piped(tool, &cfg, force_on, force_off)
+        );
+    }
     println!("agentic={}", is_agentic());
     println!("parent_script={}", parent_is_running_script());
     println!("systemd_unit={}", running_as_systemd_unit());
@@ -137,6 +175,7 @@ fn cmd_which(tool: &str, extra_args: &[String]) -> i32 {
     );
     println!("systemd_suppress={}", systemd_suppresses_activation());
     println!("user_pipeline={}", is_user_pipeline_stage());
+    println!("tea_user_pipe={}", tea_user_pipe_set());
     println!(
         "parent_comm={}",
         parent_comm().unwrap_or_else(|| "-".into())
@@ -177,7 +216,7 @@ fn main() {
         "config" => cmd_config(),
         "which" => {
             let Some(tool) = argv.get(1) else {
-                eprintln!("usage: tea which TOOL [--tea | --coffee | --no-tea]");
+                eprintln!("usage: tea which TOOL [--tea | --coffee | --no-tea] [--piped]");
                 process::exit(2);
             };
             let extra = argv.get(2..).unwrap_or(&[]);

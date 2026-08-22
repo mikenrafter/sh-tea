@@ -109,6 +109,8 @@ tea list            # dump ./logs.csv
 tea show [id]       # print a logfile's contents (default: most recent)
 tea config          # ensure ~/.config/tea/config.toml exists, print its path
 tea which TOOL      # debug: would activation fire for TOOL right now, and why
+                    # (at the shell prompt interactive=false is normal; pipe in:
+                    #  echo x | tea which TOOL, or read interactive_if_piped)
 ```
 
 ### When does it actually activate?
@@ -125,10 +127,23 @@ Precedence, highest first (see `src/lib.rs::should_activate`):
      → activates
    - interactive pipeline stage (stderr is a TTY, stdin is a pipe, parent is
      the user's shell — not POSIX `sh`/`dash`, not a terminal emulator's deep
-     nested subprocess (`SHLVL` ≥ 4 under `TERM_PROGRAM`), nor Warp's
-     `--init-command` bootstrap fish) → activates when `default-interactive =
+     nested subprocess (`SHLVL` ≥ 5 under `TERM_PROGRAM`), or marked by
+     `TEA_USER_PIPE=1` from the fish hook) → activates when `default-interactive =
      true` in config (the default)
    - otherwise → no-op, zero extra stderr, real binary runs untouched
+
+`tea which TOOL` at the shell prompt normally reports `interactive=false`
+because stdin is still your TTY. That is expected — real pipeline stages have
+piped stdin. To preview activation without running a pipeline, check
+`interactive_if_piped` / `would_activate_if_piped`, pass `--piped`, or run
+`echo x | tea which TOOL`.
+
+Fish users: the sh-tea package installs a hook at
+`share/fish/vendor_conf.d/tea-user-pipe.fish` that sets `TEA_USER_PIPE=1`
+around interactive commands whose command line contains `|` (so plain `echo hi`
+does not mark Warp's internal filters). Pipeline stages are then recognized even
+when parent heuristics would miss them. Bash users can add an equivalent
+DEBUG-trap snippet — see `hooks/tea-user-pipe.bash`.
 
 `--tea` / `--coffee` only work on the **tea-wrapped** binaries from this
 package (they must be ahead of the real `grep`, `sed`, etc. on `PATH`). The
@@ -169,6 +184,8 @@ Any key can be overridden per tool under `[tools.grep]`, `[tools.sort]`, etc.
 - `TEA_OFF`, `TEA_FORCE` — env-level force off/on (CLI flags still win).
 - `TEA_QUIET` — suppress the stderr blurb.
 - `TEA_AGENT`, `TEA_INTERACTIVE` — force agentic/interactive detection.
+- `TEA_USER_PIPE` — set by the fish hook (or manually) to mark user pipeline
+  stages for auto-activation; does not bypass `--coffee` / `--no-tea`.
 - `XDG_CONFIG_HOME` — config root (default `~/.config`).
 
 ## Testing
