@@ -5,8 +5,9 @@ use std::path::PathBuf;
 use std::process;
 
 use tea::{
-    ensure_user_config, in_git_repo, is_agentic, is_interactive_session, last_row, list_rows,
-    load_config, load_tools, parent_is_running_script, should_activate, tool_config, CSV_FIELDS,
+    ensure_user_config, in_git_repo, invocation_id, is_agentic, is_interactive_session, last_row,
+    list_rows, load_config, load_tools, parent_is_running_script, running_as_systemd_unit,
+    should_activate, systemd_suppresses_activation, tool_config, CSV_FIELDS,
 };
 
 const USAGE: &str = "\
@@ -125,6 +126,12 @@ fn cmd_which(tool: &str) -> i32 {
     println!("interactive={}", is_interactive_session());
     println!("agentic={}", is_agentic());
     println!("parent_script={}", parent_is_running_script());
+    println!("systemd_unit={}", running_as_systemd_unit());
+    println!(
+        "invocation_id={}",
+        invocation_id().unwrap_or_else(|| "-".into())
+    );
+    println!("systemd_suppress={}", systemd_suppresses_activation());
     println!("in_git_repo={}", in_git_repo(None));
     println!("config={}", cfg.path);
     println!("  enabled={}", tcfg.enabled);

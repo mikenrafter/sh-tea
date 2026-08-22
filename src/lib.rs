@@ -447,14 +447,31 @@ pub fn strip_tea_flags(argv: &[String]) -> (Vec<String>, bool, bool) {
 
 /// systemd sets INVOCATION_ID on every process it spawns as a unit (services,
 /// timers' triggered services, etc.) — unlike the AGENT_ENV_MARKERS, it can't
-/// collide with unrelated user env vars. Background units never have a
-/// meaningful place for tea's cwd index (./logs.csv) and should never
-/// auto-activate tea, even if they happen to inherit an agent-like env var
-/// or run under a comm name that matches AGENT_COMM_SUBSTRINGS.
-fn running_as_systemd_unit() -> bool {
+/// collide with unrelated user env vars. User-session children (shells,
+/// terminal emulators, compositors) inherit the same ID from user@.service,
+/// so presence alone is not enough to identify a background unit.
+pub fn invocation_id() -> Option<String> {
     env::var("INVOCATION_ID")
-        .map(|v| !v.trim().is_empty())
-        .unwrap_or(false)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
+pub fn running_as_systemd_unit() -> bool {
+    invocation_id().is_some()
+}
+
+/// Suppress auto-activation for background systemd units (INVOCATION_ID set,
+/// stderr not a TTY). Terminal-attached user-session processes keep stderr on
+/// a TTY and are not suppressed. TEA_INTERACTIVE bypasses suppression.
+pub fn systemd_suppresses_activation() -> bool {
+    if !running_as_systemd_unit() {
+        return false;
+    }
+    if env_truthy("TEA_INTERACTIVE") {
+        return false;
+    }
+    unsafe { libc::isatty(libc::STDERR_FILENO) != 1 }
 }
 
 pub fn should_activate(tool: &str, cfg: &Config, force_on: bool, force_off: bool) -> bool {
@@ -470,7 +487,7 @@ pub fn should_activate(tool: &str, cfg: &Config, force_on: bool, force_off: bool
     if env_truthy("TEA_FORCE") {
         return true;
     }
-    if running_as_systemd_unit() {
+    if systemd_suppresses_activation() {
         return false;
     }
 

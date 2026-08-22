@@ -35,10 +35,6 @@ on `PATH` as a plain alias: same binary, same flags, same config, just a
 second name for anyone who typed the full project name out of habit. Not an
 inconsistency — see `man tea`'s NOTES section.
 
-(`sh-tea` originally lived inside [nix-scout](https://github.com/mikenrafter/nix-scout)
-as an inline scout module and was extracted into its own repo so it can be
-consumed as an ordinary flake input by anyone, not just that one system.)
-
 ## Install / build
 
 Everything is built through the flake — there's no supported `cargo build`
@@ -131,8 +127,10 @@ Precedence, highest first (see `src/lib.rs::should_activate`):
      when `default-interactive = true` in config (the default)
    - otherwise → no-op, zero extra stderr, real binary runs untouched
 
-Running as a systemd unit (`INVOCATION_ID` set) always suppresses
-activation, even if the environment happens to look agentic.
+Background systemd units (`INVOCATION_ID` set and stderr not a TTY)
+suppress activation. User-session processes (shells, terminals) inherit
+`INVOCATION_ID` from `user@.service` but keep stderr on a TTY, so they
+are not suppressed. `TEA_INTERACTIVE=1` bypasses suppression.
 
 ### Config
 
