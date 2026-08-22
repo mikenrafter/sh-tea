@@ -125,11 +125,11 @@ Precedence, highest first (see `src/lib.rs::should_activate`):
    - agentic session (detected via env vars like `CURSOR_AGENT`, `CLAUDECODE`,
      `COPILOT_CLI`, `AEGIS`, `HERMES_AGENT`, or a parent process name match)
      → activates
-   - interactive pipeline stage (stderr is a TTY, stdin is a pipe, parent is
-     the user's shell — not POSIX `sh`/`dash`, not a terminal emulator's deep
-     nested subprocess (`SHLVL` ≥ 5 under `TERM_PROGRAM`), or marked by
-     `TEA_USER_PIPE=1` from the fish hook) → activates when `default-interactive =
-     true` in config (the default)
+   - interactive pipeline stage (stderr is a TTY, stdin is a pipe, and the stage
+     is a user pipeline — under `TERM_PROGRAM` that requires `TEA_USER_PIPE=1`
+     from the fish hook; elsewhere parent-shell heuristics apply, with POSIX
+     `sh`/`dash` and deep nesting (`SHLVL` ≥ 5 under `TERM_PROGRAM`) excluded)
+     → activates when `default-interactive = true` in config (the default)
    - otherwise → no-op, zero extra stderr, real binary runs untouched
 
 `tea which TOOL` at the shell prompt normally reports `interactive=false`

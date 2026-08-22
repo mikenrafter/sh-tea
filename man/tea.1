@@ -109,20 +109,18 @@ or parent process names. Also
 .B interactive session
 When
 .B default-interactive
-is true (default): stderr is a TTY, stdin is a pipe, and the parent process
-is the user's shell (not POSIX
+is true (default): stderr is a TTY, stdin is a pipe, and the stage is a
+user pipeline. Under
+.BR TERM_PROGRAM
+(Warp, etc.) only
+.B TEA_USER_PIPE=1
+(from the fish hook) qualifies; elsewhere parent-shell heuristics apply
+(not POSIX
 .BR sh / dash,
-nor a terminal emulator's internal
-.BR fish\ -c /
-.BR sh\ -c
-pipeline under
-.BR TERM_PROGRAM ,
-nor a deeply nested subprocess with
+nor
 .B SHLVL
 ≥ 5 under
 .BR TERM_PROGRAM ).
-.B TEA_USER_PIPE=1
-(from the fish hook or set manually) also marks user pipeline stages.
 .TP
 .B tea which
 At the shell prompt,

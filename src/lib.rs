@@ -441,6 +441,13 @@ pub fn is_user_pipeline_stage() -> bool {
         return true;
     }
 
+    // Under TERM_PROGRAM (Warp, etc.) session fish is the parent of both user
+    // pipelines and terminal input-engine internals — parent/SHLVL heuristics
+    // cannot tell them apart. Require the fish hook's TEA_USER_PIPE there.
+    if term_program_is_emulator() {
+        return false;
+    }
+
     let ppid = unsafe { libc::getppid() };
     if ppid <= 1 {
         return false;
