@@ -284,7 +284,124 @@ fn env_falsey_or_empty(val: &str) -> bool {
     matches!(s.to_lowercase().as_str(), "0" | "false" | "no" | "off")
 }
 
-const SHELL_NAMES: &[&str] = &["bash", "sh", "dash", "zsh", "ksh", "mksh"];
+const SHELL_NAMES: &[&str] = &["bash", "sh", "dash", "zsh", "ksh", "mksh", "fish"];
+
+const TERMINAL_EMULATOR_COMM_SUBSTRINGS: &[&str] = &[
+    "warp",
+    "kitty",
+    "alacritty",
+    "wezterm",
+    "ghostty",
+    "hyper",
+    "foot",
+    "terminology",
+    "konsole",
+    "gnome-terminal",
+    "xfce4-terminal",
+    "tilix",
+    "contour",
+    "tabby",
+];
+
+fn process_comm(pid: i32) -> Option<String> {
+    fs::read_to_string(format!("/proc/{pid}/comm"))
+        .ok()
+        .map(|s| s.trim().to_string())
+}
+
+fn process_cmdline_argv(pid: i32) -> Vec<String> {
+    let Ok(raw) = fs::read(format!("/proc/{pid}/cmdline")) else {
+        return Vec::new();
+    };
+    raw.split(|b: &u8| *b == 0)
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| std::str::from_utf8(s).ok().map(str::to_string))
+        .collect()
+}
+
+fn process_ppid(pid: i32) -> Option<i32> {
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let parts: Vec<&str> = stat.split_whitespace().collect();
+    parts.get(3)?.parse().ok()
+}
+
+fn argv0_base(argv: &[String]) -> String {
+    argv.first()
+        .map(|a| {
+            Path::new(a)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(a)
+                .to_string()
+        })
+        .unwrap_or_default()
+}
+
+fn comm_is_shell(comm: &str) -> bool {
+    SHELL_NAMES.iter().any(|s| *s == comm.trim())
+}
+
+fn comm_is_terminal_emulator(comm: &str) -> bool {
+    let low = comm.trim().to_lowercase();
+    TERMINAL_EMULATOR_COMM_SUBSTRINGS
+        .iter()
+        .any(|s| low.contains(s))
+}
+
+fn shell_argv_has_dash_c(argv: &[String]) -> bool {
+    if argv.is_empty() {
+        return false;
+    }
+    if !SHELL_NAMES.iter().any(|s| *s == argv0_base(argv).as_str()) {
+        return false;
+    }
+    let mut i = 1;
+    while i < argv.len() {
+        let arg = &argv[i];
+        if arg == "--" {
+            break;
+        }
+        if arg == "-c" {
+            return true;
+        }
+        if arg.starts_with('-') {
+            i += 1;
+            continue;
+        }
+        break;
+    }
+    false
+}
+
+/// True when the immediate parent is the user's shell (or a shell `-c` one
+/// level below another shell). Terminal emulators' internal `sh -c` pipelines
+/// (Warp paste handling, etc.) are excluded.
+pub fn is_user_pipeline_stage() -> bool {
+    let ppid = unsafe { libc::getppid() };
+    if ppid <= 1 {
+        return false;
+    }
+    let Some(parent_comm) = process_comm(ppid) else {
+        return false;
+    };
+    if !comm_is_shell(&parent_comm) {
+        return false;
+    }
+    let parent_argv = process_cmdline_argv(ppid);
+    if shell_argv_has_dash_c(&parent_argv) {
+        let Some(gppid) = process_ppid(ppid) else {
+            return false;
+        };
+        let Some(gp_comm) = process_comm(gppid) else {
+            return false;
+        };
+        if comm_is_terminal_emulator(&gp_comm) {
+            return false;
+        }
+        return comm_is_shell(&gp_comm);
+    }
+    true
+}
 
 /// Returns true when the immediate parent process is a shell executing a script
 /// file (e.g. `bash /path/to/nix-scout`). Used to suppress activation for tools
@@ -512,7 +629,7 @@ pub fn should_activate(tool: &str, cfg: &Config, force_on: bool, force_off: bool
     if is_agentic() {
         return true;
     }
-    if tcfg.default_interactive && is_interactive_session() {
+    if tcfg.default_interactive && is_interactive_session() && is_user_pipeline_stage() {
         return true;
     }
     false

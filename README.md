@@ -115,17 +115,23 @@ tea which TOOL      # debug: would activation fire for TOOL right now, and why
 
 Precedence, highest first (see `src/lib.rs::should_activate`):
 
-1. `--coffee` / `--no-tea` — force off
-2. `--tea` — force on
+1. `--coffee` / `--no-tea` — force off (wins over everything)
+2. `--tea` — force on (wins over all env vars and auto-detect gates)
 3. `TEA_OFF=1` — env force off
 4. `TEA_FORCE=1` — env force on
 5. config / auto-detect:
    - agentic session (detected via env vars like `CURSOR_AGENT`, `CLAUDECODE`,
      `COPILOT_CLI`, `AEGIS`, `HERMES_AGENT`, or a parent process name match)
      → activates
-   - interactive terminal session (stderr is a TTY, stdin isn't) → activates
-     when `default-interactive = true` in config (the default)
+   - interactive pipeline stage (stderr is a TTY, stdin is a pipe, parent is
+     the user's shell — not a terminal emulator's internal `sh -c` pipeline)
+     → activates when `default-interactive = true` in config (the default)
    - otherwise → no-op, zero extra stderr, real binary runs untouched
+
+`--tea` / `--coffee` only work on the **tea-wrapped** binaries from this
+package (they must be ahead of the real `grep`, `sed`, etc. on `PATH`). The
+wrapper strips the flag before execing the real tool; passing `--tea` to an
+unwrapped system binary will fail.
 
 Background systemd units (`INVOCATION_ID` set and stderr not a TTY)
 suppress activation. User-session processes (shells, terminals) inherit

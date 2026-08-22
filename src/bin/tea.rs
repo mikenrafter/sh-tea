@@ -5,9 +5,10 @@ use std::path::PathBuf;
 use std::process;
 
 use tea::{
-    ensure_user_config, in_git_repo, invocation_id, is_agentic, is_interactive_session, last_row,
-    list_rows, load_config, load_tools, parent_is_running_script, running_as_systemd_unit,
-    should_activate, systemd_suppresses_activation, tool_config, CSV_FIELDS,
+    ensure_user_config, in_git_repo, invocation_id, is_agentic, is_interactive_session,
+    is_user_pipeline_stage, last_row, list_rows, load_config, load_tools,
+    parent_is_running_script, running_as_systemd_unit, should_activate, strip_tea_flags,
+    systemd_suppresses_activation, tool_config, CSV_FIELDS,
 };
 
 const USAGE: &str = "\
@@ -112,17 +113,20 @@ fn cmd_config() -> i32 {
     }
 }
 
-fn cmd_which(tool: &str) -> i32 {
+fn cmd_which(tool: &str, extra_args: &[String]) -> i32 {
     let tools = load_tools();
     if !tools.iter().any(|t| t == tool) {
         eprintln!("tea: unknown tool: {tool}");
         return 2;
     }
+    let (_, force_on, force_off) = strip_tea_flags(extra_args);
     let cfg = load_config();
-    let on = should_activate(tool, &cfg, false, false);
+    let on = should_activate(tool, &cfg, force_on, force_off);
     let tcfg = tool_config(&cfg, tool);
     println!("tool={tool}");
     println!("would_activate={on}");
+    println!("force_tea={force_on}");
+    println!("force_off={force_off}");
     println!("interactive={}", is_interactive_session());
     println!("agentic={}", is_agentic());
     println!("parent_script={}", parent_is_running_script());
@@ -132,6 +136,7 @@ fn cmd_which(tool: &str) -> i32 {
         invocation_id().unwrap_or_else(|| "-".into())
     );
     println!("systemd_suppress={}", systemd_suppresses_activation());
+    println!("user_pipeline={}", is_user_pipeline_stage());
     println!("in_git_repo={}", in_git_repo(None));
     println!("config={}", cfg.path);
     println!("  enabled={}", tcfg.enabled);
@@ -162,10 +167,11 @@ fn main() {
         "config" => cmd_config(),
         "which" => {
             let Some(tool) = argv.get(1) else {
-                eprintln!("usage: tea which TOOL");
+                eprintln!("usage: tea which TOOL [--tea | --coffee | --no-tea]");
                 process::exit(2);
             };
-            cmd_which(tool)
+            let extra = argv.get(2..).unwrap_or(&[]);
+            cmd_which(tool, extra)
         }
         _ => {
             eprint!("{USAGE}");

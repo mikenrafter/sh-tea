@@ -109,8 +109,16 @@ or parent process names. Also
 .B interactive session
 When
 .B default-interactive
-is true (default): stderr is a TTY
-(pipeline stages usually still have a TTY stderr even when stdin is a pipe).
+is true (default): stderr is a TTY, stdin is a pipe, and the parent process
+is the user's shell (not a terminal emulator's internal
+.BR sh\ -c
+pipeline).
+.TP
+.B --tea / --coffee
+Only work on tea-wrapped binaries from this package (must be ahead of the
+real utilities on
+.BR PATH ).
+The wrapper strips the flag before execing the real tool.
 .PP
 Non-interactive scripts without agent markers are a no-op: the real binary is
 .BR exec 'd
@@ -201,7 +209,11 @@ and the effective config (including
 .BR systemd_unit ,
 .BR invocation_id ,
 and
-.BR systemd_suppress ).
+.BR systemd_suppress ,
+.BR user_pipeline ,
+and optional
+.BR --tea / --coffee / --no-tea
+flags).
 .
 .SH ENVIRONMENT
 .TP
