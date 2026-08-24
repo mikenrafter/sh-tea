@@ -454,6 +454,45 @@ else
   fail "TEA_USER_PIPE + --coffee should not log (rc=$tea_user_pipe_rc logs=$(count_logs))"
 fi
 
+# ---------------------------------------------------------------------------
+# F. Fish: suppress completion pipelines without TEA_USER_PIPE
+# ---------------------------------------------------------------------------
+echo "== F. fish completion suppression =="
+
+if command -v fish >/dev/null 2>&1; then
+  fish_pipe_test="$WORKDIR/fish-pipe-test.fish"
+  printf '%s\n' 'printf "a\nb\nc\n" | '"$TEA_OUT"'/bin/tea which tail --piped 2>&1' >"$fish_pipe_test"
+  clear_logs
+  set +e
+  fish -i "$fish_pipe_test" | "$GREP" -q 'user_pipeline=false'
+  fish_no_pipe_rc=$?
+  set -e
+  if [[ "$fish_no_pipe_rc" -eq 0 ]]; then
+    pass "fish-parented pipeline without TEA_USER_PIPE is not user_pipeline"
+  else
+    fail "expected user_pipeline=false for fish parent without TEA_USER_PIPE"
+  fi
+
+  clear_logs
+  out_tmp="$("$MKTEMP" "$WORKDIR/out.XXXXXX")"
+  set +e
+  fish -i -c 'complete -C "kill "' >/dev/null 2>"$out_tmp"
+  fish_comp_rc=$?
+  set -e
+  if [[ "$fish_comp_rc" -eq 0 && ! -s "$out_tmp" || "$("$CAT" "$out_tmp")" != *'[tea]'* ]]; then
+    if [[ "$(count_logs)" -eq 0 ]]; then
+      pass "fish kill completion does not emit [tea] blurbs"
+    else
+      fail "fish kill completion created logs.csv rows ($(count_logs))"
+    fi
+  else
+    fail "fish kill completion stderr contained [tea]: $("$CAT" "$out_tmp")"
+  fi
+  "$RM" -f "$out_tmp"
+else
+  pass "fish completion suppression (skipped: fish not on PATH)"
+fi
+
 echo
 if [[ "$failures" -eq 0 ]]; then
   echo "All functional checks passed."

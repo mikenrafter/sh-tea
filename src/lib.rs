@@ -458,6 +458,14 @@ pub fn is_user_pipeline_stage() -> bool {
     let parent_argv = process_cmdline_argv(ppid);
     let parent_base = argv0_base(&parent_argv);
 
+    // Interactive fish (no `-c`) parents tab-completion helpers — e.g.
+    // `__fish_complete_pids` pipes to `tail -n +2` when completing `kill` —
+    // that pass parent/TTY heuristics but are not user pipelines. Real fish
+    // pipes set TEA_USER_PIPE via the vendor_conf.d preexec hook (above).
+    if parent_comm.trim() == "fish" && !shell_argv_has_dash_c(&parent_argv) {
+        return false;
+    }
+
     if is_terminal_emulator_deep_subprocess() {
         return false;
     }

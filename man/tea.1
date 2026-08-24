@@ -115,7 +115,9 @@ user pipeline. Under
 .BR TERM_PROGRAM
 (Warp, etc.) only
 .B TEA_USER_PIPE=1
-(from the fish hook) qualifies; elsewhere parent-shell heuristics apply
+(from the fish hook) qualifies; when the parent is interactive fish (no
+.BR \-c ),
+likewise. Otherwise parent-shell heuristics apply
 (not POSIX
 .BR sh / dash,
 nor

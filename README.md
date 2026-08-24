@@ -128,7 +128,8 @@ Precedence, highest first (see `src/lib.rs::evaluate_activation`):
      → activates
    - interactive pipeline stage (stderr is a TTY, stdin is a pipe, and the stage
      is a user pipeline — under `TERM_PROGRAM` that requires `TEA_USER_PIPE=1`
-     from the fish hook; elsewhere parent-shell heuristics apply, with POSIX
+     from the fish hook; when the parent is interactive fish (no `-c`), likewise.
+     Otherwise parent-shell heuristics apply, with POSIX
      `sh`/`dash` and deep nesting (`SHLVL` ≥ 5 under `TERM_PROGRAM`) excluded)
      → activates when `default-interactive = true` in config (the default)
    - otherwise → no-op, zero extra stderr, real binary runs untouched
@@ -159,6 +160,11 @@ PATH wrappers — only `grep` among sh-tea's tools; nothing else overlaps.
 The package installs `share/fish/vendor_functions.d/grep.fish`, which
 autoloads before embedded `grep.fish` and delegates via `command grep` so
 the tea wrapper on PATH is used. Until that loads, use `command grep`.
+
+Tab completion is a separate fish issue: helpers like `__fish_complete_pids`
+(run when completing `kill`, etc.) pipe to `tail -n +2` and otherwise look
+like user pipeline stages. Tea ignores fish-parented stages unless
+`TEA_USER_PIPE=1` from the preexec hook — the same marker real typed pipes use.
 
 Background systemd units (`INVOCATION_ID` set and stderr not a TTY)
 suppress activation. User-session processes (shells, terminals) inherit
