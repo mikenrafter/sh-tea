@@ -1,0 +1,82 @@
+Let's augment this project to have a configurable min time for a process to be running before sh-tea is actually invoked. But first, how feasible is such a thing? If I run `echo hi | grep i` will the wrapped version of grep know how long `echo hi` ran for?
+
+---
+
+Let's say I ran `nixos-rebuild switch | grep error`... Wouldn't the grep pipe last a long time? Wouldn't it see a lengthy and time-consuming stdout stream?
+
+---
+
+Make a basic shell demo w/ `echo a && sleep n && echo b` | duration-watcher-pipe... Verify our logic is sound here. Once that comes through green, implement a min time of 5s. r/g tdd (skip residual ceremony, keep the subagent implementation stream) and make sure the final version works w/ live tests yourself.
+
+---
+
+<task-notification>
+<task-id>ab67cd64f053e6cf0</task-id>
+<tool-use-id>toolu_01UrsLtWqm6jK6tKFWjyX1G6</tool-use-id>
+<output-file>/tmp/claude-1000/-home-v0id-Documents-repos-sh-tea/9ff5cad3-4ea2-4136-a8dc-b611e5e1f2e8/tasks/ab67cd64f053e6cf0.output</output-file>
+<status>completed</status>
+<summary>Agent "TDD min-duration-ms gate for sh-tea" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Implementation complete and fully green. Summary for the report:
+
+## Files changed
+
+- `/home/v0id/Documents/repos/sh-tea/src/lib.rs` — added `min_duration_ms: u64` field to `ToolCfg` (default `5000`), parsed `min-duration-ms` in `apply_raw()` via the existing `as_int()` helper, and added the key to `DEFAULT_CONFIG_TOML`.
+- `/home/v0id/Documents/repos/sh-tea/flake.nix` — added `min-duration-ms = 5000` with an explanatory comment to `defaultConfigToml` (the real shipped default).
+- `/home/v0id/Documents/repos/sh-tea/src/bin/tea_wrap.rs` — `run_wrapped()` now takes `subject_to_min_duration: bool`, wraps `Instant::now()` around the existing spawn→copy→wait span, and after computing `rc`, if `subject_to_min_duration &amp;&amp; elapsed &lt; tcfg.min_duration_ms`, deletes the `.tea` capture file and returns early (skipping `register_log`/`announce`). `main()` now computes `subject_to_min_duration = matches!(report.outcome, ActivationOutcome::ActivatedAgentic | ActivationOutcome::ActivatedInteractive)` and passes it through — `--tea`/`TEA_FORCE` outcomes are untouched by the gate.
+- `/home/v0id/Documents/repos/sh-tea/README.md` — added `min-duration-ms` to the config table, plus a short paragraph in "When does it actually activate?" clarifying it's a post-activation logging filter (decided after the run, since duration isn't known beforehand) that only applies to auto-detect outcomes, not `--tea`/`TEA_FORCE`.
+- `/home/v0id/Documents/repos/sh-tea/man/tea.1` — added `min-duration-ms` to the per-tool key list, and a matching `.TP`/`.B` entry in `SH ACTIVATION` explaining the same semantics.
+- `/home/v0id/Documents/repos/sh-tea/tests/functional.sh` — added `SED`, `TIMEOUT`, `SLEEP` to the `SYS_BIN`-qualified tool variables (avoids going through tea-wrapped `sed`, and `timeout`/`sleep` aren't wrapped tools anyway), and new section `G. min-duration gate` with 3 assertions.
+
+## Key finding during RED that shaped the test design
+
+Deterministically reaching `ActivatedAgentic`/`ActivatedInteractive` (not `--tea`/`TEA_FORCE`) inside this bash harness required defeating two suppressors that force/env activation bypass but auto-detect does not:
+- `parent_is_running_script()` — the harness itself runs as `bash tests/functional.sh` (a script file), which trips this check for any command invoked directly. Routing the invocation through `timeout N ...` works because `timeout` is a genuine non-shell parent process (confirmed empirically via `tea which --piped`; a `bash -c '...'` wrapper does *not* work here because bash's own exec-optimization collapses it back into the outer script's PID).
+- `systemd_suppresses_activation()` — this sandboxed environment always has `INVOCATION_ID` set with stderr not a TTY; bypassed with `TEA_INTERACTIVE=1`.
+
+So the recipe used is: `timeout 10 env -u TEA_OFF TEA_AGENT=1 TEA_USER_PIPE=1 TEA_INTERACTIVE=1 ...`.
+
+## Diff of tests/functional.sh section G
+
+```
++# ---------------------------------------------------------------------------
++# G. min-duration gate
++# ---------------------------------------------------------------------------
++echo "== G. min-duration gate =="
++
++run_capture env -u TEA_OFF "$TEA_OUT/bin/tea" config
++GATE_CFG="$WORKDIR/xdg/tea/config.toml"
++...
++"$SED" -i '/^\[tools\.head\]$/a min-duration-ms = 500' "$GATE_CFG"
++...
++# G1: fast producer, auto-activated, elapsed well under threshold -&gt; gated
++# G2: slow upstream producer (sleep 1), auto-activated -&gt; logged
++# G3: fast producer forced via --tea -&gt; gate bypassed, still logged
+```//(full text applied to the file; see file for exact content)
+
+## Final test run (green)
+
+```
+== G. min-duration gate ==
+PASS: fast auto-activated stage under min-duration-ms is not logged
+PASS: slow upstream producer through auto-activation is logged despite fast downstream tool
+PASS: --tea forced activation bypasses min-duration-ms gate
+
+All functional checks passed.
+```
+
+All sections A–G passed (34 assertions total, 0 failures) against the Nix-built package; sections A-F required no changes and were unaffected.</result>
+<usage><subagent_tokens>116780</subagent_tokens><tool_uses>41</tool_uses><duration_ms>510419</duration_ms></usage>
+</task-notification>
+
+---
+
+Commit and push
+
+---
+
+Though, hold on... this min-time setting is configurable, right?
+
+---
+
+The ../phoe-nix/scout-modules/sh-tea module can configure it? If so, good, commit. If not - fix prior to committing.
