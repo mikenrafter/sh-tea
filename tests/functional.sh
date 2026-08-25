@@ -25,6 +25,9 @@ HEAD="${SYS_BIN}/head"
 TAIL="${SYS_BIN}/tail"
 MKDIR="${SYS_BIN}/mkdir"
 BASENAME="${SYS_BIN}/basename"
+SED="${SYS_BIN}/sed"
+TIMEOUT="${SYS_BIN}/timeout"
+SLEEP="${SYS_BIN}/sleep"
 
 failures=0
 pass() { printf 'PASS: %s\n' "$1"; }
@@ -491,6 +494,95 @@ if command -v fish >/dev/null 2>&1; then
   "$RM" -f "$out_tmp"
 else
   pass "fish completion suppression (skipped: fish not on PATH)"
+fi
+
+# ---------------------------------------------------------------------------
+# G. min-duration gate
+# ---------------------------------------------------------------------------
+echo "== G. min-duration gate =="
+
+# Materialize the isolated config, then give `head` a low min-duration-ms
+# threshold so a fast stage is gated while a genuinely slow upstream producer
+# still logs. Insert right after the existing [tools.head] header (already
+# present with `enabled = true` from TEA_DEFAULT_CONFIG) rather than
+# appending a second [tools.head] table, which TOML would reject.
+run_capture env -u TEA_OFF "$TEA_OUT/bin/tea" config
+GATE_CFG="$WORKDIR/xdg/tea/config.toml"
+if [[ ! -f "$GATE_CFG" ]]; then
+  echo "FAIL: expected config at $GATE_CFG" >&2
+  exit 2
+fi
+"$SED" -i '/^\[tools\.head\]$/a min-duration-ms = 500' "$GATE_CFG"
+if ! "$GREP" -q 'min-duration-ms = 500' "$GATE_CFG"; then
+  echo "FAIL: could not inject min-duration-ms into $GATE_CFG" >&2
+  exit 2
+fi
+
+# Deterministic auto-activation (agentic + user-pipeline), routed through
+# `timeout` as a genuine non-shell parent so parent_is_running_script() does
+# not suppress it (this harness itself runs as `bash tests/functional.sh`,
+# a script file), and TEA_INTERACTIVE=1 so systemd_suppresses_activation()
+# does not fire if this harness happens to run under a systemd-managed
+# session (INVOCATION_ID set, stderr not a tty).
+EXPECTED_GATE_FAST=$'a\n'
+EXPECTED_GATE_SLOW=$'a\nb\n'
+
+# G1: fast producer, auto-activated, elapsed well under the threshold ->
+# gated: no new logs.csv row, no [tea] blurb.
+clear_logs
+before="$(count_logs)"
+printf 'a\nb\n' >"$WORKDIR/gate-fast.txt"
+out_tmp="$("$MKTEMP" "$WORKDIR/out.XXXXXX")"
+err_tmp="$("$MKTEMP" "$WORKDIR/err.XXXXXX")"
+set +e
+"$TIMEOUT" 10 env -u TEA_OFF TEA_AGENT=1 TEA_USER_PIPE=1 TEA_INTERACTIVE=1 TEA_QUIET=1 \
+  "$TEA_OUT/bin/head" -n 1 <"$WORKDIR/gate-fast.txt" >"$out_tmp" 2>"$err_tmp"
+gate_fast_rc=$?
+set -e
+CAPTURED_OUT="$("$CAT" "$out_tmp"; printf x)"; CAPTURED_OUT="${CAPTURED_OUT%x}"
+CAPTURED_ERR="$("$CAT" "$err_tmp"; printf x)"; CAPTURED_ERR="${CAPTURED_ERR%x}"
+"$RM" -f "$out_tmp" "$err_tmp"
+after="$(count_logs)"
+if [[ "$gate_fast_rc" -eq 0 && "$CAPTURED_OUT" == "$EXPECTED_GATE_FAST" \
+  && "$after" -eq "$before" && "$CAPTURED_ERR" != *'[tea]'* ]]; then
+  pass "fast auto-activated stage under min-duration-ms is not logged"
+else
+  fail "fast auto-activated stage should be gated (rc=$gate_fast_rc before=$before after=$after out=$(printf %q "$CAPTURED_OUT") err=$(printf %q "$CAPTURED_ERR"))"
+fi
+
+# G2: slow upstream producer (sleep before final write), auto-activated ->
+# tea-wrap's own spawn->wait elapsed is bounded below by the producer, so
+# the row is logged even though the wrapped tool itself does little work.
+clear_logs
+before="$(count_logs)"
+out_tmp="$("$MKTEMP" "$WORKDIR/out.XXXXXX")"
+err_tmp="$("$MKTEMP" "$WORKDIR/err.XXXXXX")"
+set +e
+{ printf 'a\n'; "$SLEEP" 1; printf 'b\n'; } | "$TIMEOUT" 10 env -u TEA_OFF TEA_AGENT=1 TEA_USER_PIPE=1 TEA_INTERACTIVE=1 \
+  "$TEA_OUT/bin/head" -n 5 >"$out_tmp" 2>"$err_tmp"
+gate_slow_rc=$?
+set -e
+CAPTURED_OUT="$("$CAT" "$out_tmp"; printf x)"; CAPTURED_OUT="${CAPTURED_OUT%x}"
+CAPTURED_ERR="$("$CAT" "$err_tmp"; printf x)"; CAPTURED_ERR="${CAPTURED_ERR%x}"
+"$RM" -f "$out_tmp" "$err_tmp"
+after="$(count_logs)"
+if [[ "$gate_slow_rc" -eq 0 && "$CAPTURED_OUT" == "$EXPECTED_GATE_SLOW" \
+  && "$after" -eq $((before + 1)) && "$CAPTURED_ERR" == *'[tea]'* ]]; then
+  pass "slow upstream producer through auto-activation is logged despite fast downstream tool"
+else
+  fail "slow producer stage should be logged (rc=$gate_slow_rc before=$before after=$after out=$(printf %q "$CAPTURED_OUT") err=$(printf %q "$CAPTURED_ERR"))"
+fi
+
+# G3: fast producer forced via --tea -> gate is a post-activation logging
+# filter for auto-detect outcomes only; an explicit --tea ask still logs.
+clear_logs
+before="$(count_logs)"
+run_capture env -u TEA_OFF TEA_QUIET=1 "$TEA_OUT/bin/head" --tea -n 1 <"$WORKDIR/gate-fast.txt"
+after="$(count_logs)"
+if [[ "$CAPTURED_RC" -eq 0 && "$CAPTURED_OUT" == "$EXPECTED_GATE_FAST" && "$after" -eq $((before + 1)) ]]; then
+  pass "--tea forced activation bypasses min-duration-ms gate"
+else
+  fail "--tea should bypass gate and still log (rc=$CAPTURED_RC before=$before after=$after out=$(printf %q "$CAPTURED_OUT"))"
 fi
 
 echo

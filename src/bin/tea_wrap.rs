@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 use tea::{
     announce, copy_stdin_to_proc_and_log, discover_pipeline_siblings, evaluate_activation,
     load_config, load_tools, make_logfile_path, register_log, strip_tea_flags, tool_config,
-    ActivationContext, Config, ToolCfg,
+    ActivationContext, ActivationOutcome, Config, ToolCfg,
 };
 
 fn passthrough_exec(real: &str, args: &[String]) -> ! {
@@ -18,7 +18,13 @@ fn passthrough_exec(real: &str, args: &[String]) -> ! {
     std::process::exit(127);
 }
 
-fn run_wrapped(tool: &str, real: &str, args: &[String], tcfg: &ToolCfg) -> i32 {
+fn run_wrapped(
+    tool: &str,
+    real: &str,
+    args: &[String],
+    tcfg: &ToolCfg,
+    subject_to_min_duration: bool,
+) -> i32 {
     let logfile = match make_logfile_path() {
         Ok(p) => p,
         Err(e) => {
@@ -28,6 +34,8 @@ fn run_wrapped(tool: &str, real: &str, args: &[String], tcfg: &ToolCfg) -> i32 {
     };
     let quiet = tcfg.quiet;
     let siblings = discover_pipeline_siblings();
+
+    let started = std::time::Instant::now();
 
     let mut child = match Command::new(real)
         .args(args)
@@ -77,6 +85,12 @@ fn run_wrapped(tool: &str, real: &str, args: &[String], tcfg: &ToolCfg) -> i32 {
         Ok(status) => status.code().unwrap_or(1),
         Err(_) => 1,
     };
+
+    let elapsed = started.elapsed();
+    if subject_to_min_duration && elapsed.as_millis() < tcfg.min_duration_ms as u128 {
+        let _ = std::fs::remove_file(&logfile);
+        return rc;
+    }
 
     match register_log(
         tool,
@@ -130,8 +144,14 @@ fn main() {
     if !report.activate {
         passthrough_exec(real, &passthrough);
     }
+    let subject_to_min_duration = matches!(
+        report.outcome,
+        ActivationOutcome::ActivatedAgentic | ActivationOutcome::ActivatedInteractive
+    );
 
-    let code = match std::panic::catch_unwind(|| run_wrapped(tool, real, &passthrough, &tcfg)) {
+    let code = match std::panic::catch_unwind(|| {
+        run_wrapped(tool, real, &passthrough, &tcfg, subject_to_min_duration)
+    }) {
         Ok(rc) => rc,
         Err(_) => 1,
     };

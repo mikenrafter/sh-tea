@@ -134,6 +134,13 @@ Precedence, highest first (see `src/lib.rs::evaluate_activation`):
      → activates when `default-interactive = true` in config (the default)
    - otherwise → no-op, zero extra stderr, real binary runs untouched
 
+`min-duration-ms` (default 5000) is a separate, *post-activation* filter, not
+part of the precedence above: it can only drop a log after the wrapped tool
+has already run and exited, since duration isn't known beforehand. It only
+applies when activation came from auto-detect (agentic/interactive) — a
+stage forced on via `--tea` or `TEA_FORCE=1` always logs regardless of how
+fast it ran.
+
 `tea which TOOL` calls the **same** `evaluate_activation()` gate as `tea-wrap`.
 `would_activate` and `outcome` come directly from that decision; the other
 lines are the runtime signals collected during that single evaluation (not
@@ -185,6 +192,7 @@ max-log-records = 20         # rows kept in ./logs.csv; oldest + their .tea file
 quiet = false                # suppress the stderr blurb
 only-in-git-repos = false    # restrict activation by git context
 only-outside-git-repos = false
+min-duration-ms = 5000       # drop the log if the stage ran faster than this (auto-detect only)
 ```
 
 Any key can be overridden per tool under `[tools.grep]`, `[tools.sort]`, etc.

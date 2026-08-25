@@ -180,6 +180,7 @@ fn print_activation_report(tool: &str, cfg: &Config, report: &ActivationReport) 
     println!("  manual-only={}", tcfg.manual_only);
     println!("  max-log-records={}", tcfg.max_log_records);
     println!("  quiet={}", tcfg.quiet);
+    println!("  min-duration-ms={}", tcfg.min_duration_ms);
 }
 
 fn cmd_which(tool: &str, extra_args: &[String]) -> i32 {

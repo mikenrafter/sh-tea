@@ -84,6 +84,7 @@ max-log-records = 20
 quiet = false
 only-in-git-repos = false
 only-outside-git-repos = false
+min-duration-ms = 5000
 "#;
 
 #[derive(Debug, Clone)]
@@ -96,6 +97,7 @@ pub struct ToolCfg {
     pub manual_only: bool,
     pub max_log_records: usize,
     pub quiet: bool,
+    pub min_duration_ms: u64,
 }
 
 impl Default for ToolCfg {
@@ -109,6 +111,7 @@ impl Default for ToolCfg {
             manual_only: false,
             max_log_records: 20,
             quiet: false,
+            min_duration_ms: 5000,
         }
     }
 }
@@ -235,6 +238,9 @@ fn apply_raw(base: &ToolCfg, raw: &HashMap<String, toml::Value>) -> ToolCfg {
     }
     if let Some(v) = raw.get("max-log-records") {
         cfg.max_log_records = as_int(v, cfg.max_log_records as i64).max(1) as usize;
+    }
+    if let Some(v) = raw.get("min-duration-ms") {
+        cfg.min_duration_ms = as_int(v, cfg.min_duration_ms as i64).max(0) as u64;
     }
     cfg
 }

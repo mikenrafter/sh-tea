@@ -147,6 +147,24 @@ Only work on tea-wrapped binaries from this package (must be ahead of the
 real utilities on
 .BR PATH ).
 The wrapper strips the flag before execing the real tool.
+.TP
+.B min-duration-ms
+Post-activation logging filter, not part of the precedence above: after an
+.B agentic
+or
+.B interactive
+auto-detect activation runs to completion, if the wrapper's own elapsed
+wall-clock time (spawn through wait) was under this many milliseconds
+(default 5000), the capture file is deleted and no
+.I logs.csv
+row or stderr blurb is emitted. Decided after the fact because duration
+isn't known beforehand. Does
+.B not
+apply to
+.B --tea
+or
+.BR TEA_FORCE=1 ,
+which always log.
 .PP
 Non-interactive scripts without agent markers are a no-op: the real binary is
 .BR exec 'd
@@ -192,7 +210,8 @@ Created on first use. Per-tool keys:
 .RI ( alias:\ default-intactive ),
 .BR manual-only ,
 .BR max-log-records ,
-.BR quiet .
+.BR quiet ,
+.BR min-duration-ms .
 .TP
 .I .gitignore
 When

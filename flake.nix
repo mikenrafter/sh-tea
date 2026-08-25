@@ -38,6 +38,10 @@
         max-log-records = 20
         # Suppress the stderr blurb that announces the log path.
         quiet = false
+        # Post-activation filter: drop the log if the stage's own elapsed
+        # wall-clock time was under this many ms. Only applies to auto-detected
+        # activation (agentic/interactive); --tea/TEA_FORCE always log.
+        min-duration-ms = 5000
         # Restrict activation by git context (both false = anywhere).
         only-in-git-repos = false
         only-outside-git-repos = false
