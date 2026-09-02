@@ -133,21 +133,60 @@ struct RawConfig {
 
 pub type CsvRow = HashMap<String, String>;
 
+/// Parse `TEA_EXTRA_TOOLS`: comma- or whitespace-separated `name=path` pairs
+/// naming a tool to wrap and the real binary to exec (a store outpath, not an
+/// env-resolved path; values must not contain whitespace or commas). Entries
+/// that don't parse are skipped silently — the variable is user-supplied and
+/// must never break a pipeline.
+pub fn parse_extra_tools(raw: &str) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for pair in raw.split(|c: char| c == ',' || c.is_whitespace()) {
+        let pair = pair.trim();
+        if pair.is_empty() {
+            continue;
+        }
+        let Some((name, real)) = pair.split_once('=') else {
+            continue;
+        };
+        let name = name.trim();
+        let real = real.trim();
+        if name.is_empty() || real.is_empty() || out.iter().any(|(n, _)| n == name) {
+            continue;
+        }
+        out.push((name.to_string(), real.to_string()));
+    }
+    out
+}
+
+/// Runtime-defined extra wraps from `TEA_EXTRA_TOOLS`. The fish hook
+/// (share/fish/vendor_conf.d/tea-extra-tools.fish) creates shadow functions
+/// from the same variable in interactive shells only; the build-time
+/// equivalent is the flake's `extraTools` package override.
+pub fn extra_tools() -> Vec<(String, String)> {
+    env::var("TEA_EXTRA_TOOLS")
+        .map(|raw| parse_extra_tools(&raw))
+        .unwrap_or_default()
+}
+
 pub fn load_tools() -> Vec<String> {
-    if let Ok(path) = env::var("TEA_TOOLS_JSON") {
-        if let Ok(text) = fs::read_to_string(&path) {
-            if let Ok(data) = serde_json::from_str::<serde_json::Value>(&text) {
-                if let Some(obj) = data.as_object() {
-                    if !obj.is_empty() {
-                        let mut keys: Vec<String> = obj.keys().cloned().collect();
-                        keys.sort();
-                        return keys;
-                    }
-                }
-            }
+    let mut tools: Vec<String> = if let Ok(path) = env::var("TEA_TOOLS_JSON") {
+        fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+            .and_then(|data| data.as_object().cloned())
+            .filter(|obj| !obj.is_empty())
+            .map(|obj| obj.keys().cloned().collect())
+            .unwrap_or_else(|| FALLBACK_TOOLS.iter().map(|s| (*s).to_string()).collect())
+    } else {
+        FALLBACK_TOOLS.iter().map(|s| (*s).to_string()).collect()
+    };
+    for (name, _) in extra_tools() {
+        if !tools.iter().any(|t| *t == name) {
+            tools.push(name);
         }
     }
-    FALLBACK_TOOLS.iter().map(|s| (*s).to_string()).collect()
+    tools.sort();
+    tools
 }
 
 pub fn config_path() -> PathBuf {

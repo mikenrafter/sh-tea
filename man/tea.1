@@ -80,6 +80,41 @@ pr, ptx, comm
 .PP
 BusyBox-shaped workflows are covered by wrapping the GNU/util-linux binaries
 NixOS puts on PATH (same applet names).
+.PP
+Consumers can add their own wraps; both paths run through the same
+activation gate as the canonical list.
+.TP
+.B extraTools package override
+Override the package with
+.BR extraTools ,
+mapping tool name to the real binary's outpath, e.g.
+.B sh-tea.override\ {extraTools\ =\ {rg\ =\ "${pkgs.ripgrep}/bin/rg";\ };} .
+Each entry becomes a wrapper binary on
+.B PATH
+everywhere the package is installed, with its own
+.B [tools.<name>]
+config section and completions.  Values must be store outpaths, never
+env-resolved paths: the wrapper execs the declared path directly.  An entry
+colliding with a
+.I tools.nix
+name replaces it.
+.TP
+.B TEA_EXTRA_TOOLS runtime wraps
+Comma- or whitespace-separated
+.B name=path
+pairs; the fish hook
+.RI ( share/fish/vendor_conf.d/tea-extra-tools.fish )
+creates shadow functions for them at the first prompt, so they exist only in
+sh-tea-enabled interactive shells: non-interactive sessions never fire
+.BR fish_prompt ,
+so nothing is shadowed there.  The functions shadow
+.B PATH
+binaries; entries need not be exported (the function re-exports its own pair
+for the child), but
+.B tea\ which
+only sees exported values.  Recreate the shadow set after a mid-session
+change with
+.BR __tea_extra_tools_apply .
 .
 .SH ACTIVATION
 Activation is evaluated in this order:
@@ -291,6 +326,13 @@ auto-activation. Set by the fish hook shipped in
 .IR share/fish/vendor_conf.d/tea-user-pipe.fish
 (or manually). Does not bypass
 .B --coffee / --no-tea .
+.TP
+.B TEA_EXTRA_TOOLS
+Comma- or whitespace-separated
+.B name=path
+pairs defining extra runtime wraps; turned into shadow functions by
+.IR share/fish/vendor_conf.d/tea-extra-tools.fish
+in interactive shells only. See WRAPPED TOOLS.
 .TP
 .B XDG_CONFIG_HOME
 Config root (default

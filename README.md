@@ -62,6 +62,47 @@ environment.systemPackages = [ sh-tea.packages.${system}.sh-tea ];
 Note the package is `lib.hiPrio`'d — its wrapper binaries are meant to win
 over the real `coreutils`/`gnugrep`/etc. on `PATH`.
 
+## Wrapping your own tools
+
+Anything can sit behind the same wrapper — `rg`, `jq`, whatever filter you
+run in pipelines. Two control points, same `tea-wrap` gate, config, and
+`--tea`/`--coffee` flags either way:
+
+**Build time (nix)** — override the package with `extraTools`, mapping tool
+name → the real binary's outpath:
+
+```nix
+sh-tea.packages.${system}.sh-tea.override {
+  extraTools = { rg = "${pkgs.ripgrep}/bin/rg"; };
+}
+```
+
+Each entry becomes a wrapper binary that sits on `PATH` everywhere the
+package is installed — scripts, systemd units, non-interactive shells
+included — plus a `[tools.<name>]` config section and completions. Values
+must be real store paths (never env-resolved paths): the wrapper execs the
+declared outpath directly. An entry that collides with a `tools.nix` name
+replaces it.
+
+**Runtime (`TEA_EXTRA_TOOLS`, interactive shells only)** — export `name=path`
+pairs (comma or whitespace separated), and the fish hook shipped in
+`share/fish/vendor_conf.d/tea-extra-tools.fish` creates shadow functions at
+the first prompt:
+
+```fish
+# config.fish — or environment.variables.TEA_EXTRA_TOOLS in NixOS
+set -gx TEA_EXTRA_TOOLS "rg=/nix/store/…-ripgrep-14.1.1/bin/rg"
+```
+
+These exist only in sh-tea-enabled interactive shells: non-interactive
+sessions never fire `fish_prompt`, so nothing is shadowed there. The
+functions shadow `PATH` binaries and route through the same activation gate
+as built-in wraps. Entries don't have to be exported (`set -U`/plain
+`set -g` work — the function re-exports its own pair for the child), but
+`tea which TOOL` only sees exported values. After changing the variable
+mid-session, start a new shell or run `__tea_extra_tools_apply` to recreate
+the shadow set.
+
 ## Using it
 
 Every wrapped tool takes three extra flags that `tea` consumes before
@@ -210,6 +251,9 @@ Any key can be overridden per tool under `[tools.grep]`, `[tools.sort]`, etc.
 - `TEA_AGENT`, `TEA_INTERACTIVE` — force agentic/interactive detection.
 - `TEA_USER_PIPE` — set by the fish hook (or manually) to mark user pipeline
   stages for auto-activation; does not bypass `--coffee` / `--no-tea`.
+- `TEA_EXTRA_TOOLS` — runtime-defined extra wraps (`name=path` pairs, comma
+  or whitespace separated); the fish hook turns them into shadow functions
+  in interactive shells only. See "Wrapping your own tools" above.
 - `XDG_CONFIG_HOME` — config root (default `~/.config`).
 
 ## Testing

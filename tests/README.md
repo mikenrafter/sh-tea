@@ -20,3 +20,17 @@ tests/functional.sh
 ```
 
 Optional: `TEA_PKG=/nix/store/... tests/functional.sh`
+
+### Section H — user-defined extra tools
+
+Consumer-defined wraps, both routed through the standard `tea-wrap` gate:
+the build-time `extraTools` package override (`.#sh-tea.override { extraTools
+= { … }; }` — wrapper binary on PATH referencing the declared outpath,
+`[tools.<name>]` config sections, `tea which` recognition) and the runtime
+`TEA_EXTRA_TOOLS` env var (`name=path` pairs, comma/whitespace separated,
+malformed entries skipped, rejected without the var) plus the
+`tea-extra-tools.fish` hook: shadow functions created at first `fish_prompt`
+in interactive sessions only, working with non-exported (`set -g`) scopes,
+idempotent across re-runs, and absent in non-interactive fish. Uses a
+`fakefilter` tool (a cat copy) so the suite never depends on any specific
+consumer tool being installed.

@@ -28,6 +28,7 @@ BASENAME="${SYS_BIN}/basename"
 SED="${SYS_BIN}/sed"
 TIMEOUT="${SYS_BIN}/timeout"
 SLEEP="${SYS_BIN}/sleep"
+CHMOD="${SYS_BIN}/chmod"
 
 failures=0
 pass() { printf 'PASS: %s\n' "$1"; }
@@ -96,7 +97,7 @@ clear_logs() {
 isolate_env() {
   export HOME="$WORKDIR/home"
   export XDG_CONFIG_HOME="$WORKDIR/xdg"
-  unset TEA_FORCE TEA_AGENT TEA_INTERACTIVE TEA_USER_PIPE || true
+  unset TEA_FORCE TEA_AGENT TEA_INTERACTIVE TEA_USER_PIPE TEA_EXTRA_TOOLS || true
   for v in CURSOR_AGENT CURSOR_AGENT_ID CURSOR_INVOKED_AS CLAUDECODE CLAUDE_CODE \
     CLAUDE_AGENT COPILOT_CLI COPILOT_AGENT AEGIS AEGIS_QUEUE HERMES_AGENT \
     HERMES_PROFILE AGENT_TASK_ID OPENCODE_AGENT AGENT; do
@@ -583,6 +584,167 @@ if [[ "$CAPTURED_RC" -eq 0 && "$CAPTURED_OUT" == "$EXPECTED_GATE_FAST" && "$afte
   pass "--tea forced activation bypasses min-duration-ms gate"
 else
   fail "--tea should bypass gate and still log (rc=$CAPTURED_RC before=$before after=$after out=$(printf %q "$CAPTURED_OUT"))"
+fi
+
+# ---------------------------------------------------------------------------
+# H. User-defined extra tools (build-time extraTools + runtime TEA_EXTRA_TOOLS)
+# ---------------------------------------------------------------------------
+echo "== H. user-defined extra tools =="
+
+# Tool under wrap: a plain cat copy under a distinct name, so tests never
+# depend on ripgrep (or any specific consumer tool) being present.
+"$MKDIR" -p "$WORKDIR/bin"
+FAKE_BIN="$WORKDIR/bin/fakefilter"
+printf '#!%s\ncat "$@"\n' "$SYS_BIN/bash" >"$FAKE_BIN"
+"$CHMOD" +x "$FAKE_BIN"
+
+# H0: the default package does not wrap consumer-defined tools.
+if [[ -e "$TEA_OUT/bin/fakefilter" ]]; then
+  fail "default package should not contain extraTools entries"
+else
+  pass "default package has no consumer-defined extraTools wraps"
+fi
+
+# H1: build-time extraTools override — wrapper binary lands in the package
+# (PATH everywhere), wired to the declared real-binary outpath, with
+# `tea which` support and a logs.csv row like any built-in wrap.
+OVERRIDE_OUT="$("$NIX" build --no-link --print-out-paths --no-write-lock-file --impure --expr "
+  (builtins.getFlake \"$REPO\").packages.x86_64-linux.sh-tea.override {
+    extraTools = { fakefilter = \"$FAKE_BIN\"; };
+  }" 2>"$WORKDIR/nix-override.err")"
+if [[ -z "$OVERRIDE_OUT" || ! -e "$OVERRIDE_OUT/bin/fakefilter" ]]; then
+  fail "extraTools override produced no fakefilter wrapper ($(printf %q "$OVERRIDE_OUT"))"
+else
+  pass "extraTools override builds a fakefilter wrapper"
+  if ! "$GREP" -q "$FAKE_BIN" "$OVERRIDE_OUT/bin/fakefilter"; then
+    fail "extraTools wrapper does not reference declared outpath $FAKE_BIN"
+  else
+    pass "extraTools wrapper execs the declared real-binary outpath"
+  fi
+  clear_logs
+  run_capture env -u TEA_OFF TEA_QUIET=1 "$OVERRIDE_OUT/bin/fakefilter" --tea <"$WORKDIR/stdin.txt"
+  if [[ "$CAPTURED_RC" -eq 0 && "$CAPTURED_OUT" == "$INPUT" ]]; then
+    pass "extraTools wrapper preserves stdout (--tea, fakefilter=cat)"
+  else
+    fail "extraTools wrapper stdout (rc=$CAPTURED_RC out=$(printf %q "$CAPTURED_OUT"))"
+  fi
+  if [[ -f "$WORKDIR/logs.csv" ]] && "$TAIL" -n 1 "$WORKDIR/logs.csv" | "$GREP" -q ',fakefilter,'; then
+    pass "extraTools wrapper logs rows like a built-in wrap"
+  else
+    fail "extraTools wrapper row missing from logs.csv"
+  fi
+  run_capture env -u TEA_OFF "$OVERRIDE_OUT/bin/tea" which fakefilter --piped
+  if [[ "$CAPTURED_RC" -eq 0 && "$CAPTURED_OUT" == *'tool=fakefilter'* ]]; then
+    pass "tea which recognizes extraTools entries"
+  else
+    fail "tea which fakefilter (rc=$CAPTURED_RC out=$(printf %q "$CAPTURED_OUT"))"
+  fi
+fi
+
+# H2: runtime TEA_EXTRA_TOOLS — `tea which` accepts the name, rejects without.
+run_capture env -u TEA_OFF TEA_EXTRA_TOOLS="garbage fakefilter=$FAKE_BIN" "$TEA_OUT/bin/tea" which fakefilter --piped
+if [[ "$CAPTURED_RC" -eq 0 && "$CAPTURED_OUT" == *'tool=fakefilter'* ]]; then
+  pass "TEA_EXTRA_TOOLS entries are accepted by tea which (malformed skipped)"
+else
+  fail "tea which should accept TEA_EXTRA_TOOLS (rc=$CAPTURED_RC out=$(printf %q "$CAPTURED_OUT"))"
+fi
+
+run_capture env -u TEA_OFF "$TEA_OUT/bin/tea" which fakefilter
+if [[ "$CAPTURED_RC" -eq 2 ]]; then
+  pass "without TEA_EXTRA_TOOLS the extra tool is unknown"
+else
+  fail "unknown tool should exit 2 without TEA_EXTRA_TOOLS (rc=$CAPTURED_RC)"
+fi
+
+# H3: tea-wrap direct (the call the fish-generated function makes) — accepts
+# the env-declared tool and execs the declared real binary.
+clear_logs
+run_capture env -u TEA_OFF TEA_EXTRA_TOOLS="fakefilter=$FAKE_BIN" TEA_QUIET=1 \
+  "$TEA_OUT/bin/tea-wrap" fakefilter "$FAKE_BIN" --tea <"$WORKDIR/stdin.txt"
+if [[ "$CAPTURED_RC" -eq 0 && "$CAPTURED_OUT" == "$INPUT" && -f "$WORKDIR/logs.csv" ]] \
+  && "$TAIL" -n 1 "$WORKDIR/logs.csv" | "$GREP" -q ',fakefilter,'; then
+  pass "tea-wrap accepts TEA_EXTRA_TOOLS tool and logs a row"
+else
+  fail "tea-wrap with TEA_EXTRA_TOOLS (rc=$CAPTURED_RC out=$(printf %q "$CAPTURED_OUT"))"
+fi
+
+# H4: fish hook — shadow functions created at first prompt, only in
+# interactive sessions; env-declared entries route through tea-wrap.
+if command -v fish >/dev/null 2>&1; then
+  clear_logs
+  fish_extra="$WORKDIR/extra-tools.fish"
+  {
+    printf 'set -e TEA_OFF\n'
+    printf 'set -gx PATH "%s/bin" $PATH\n' "$TEA_OUT"
+    printf "set -gx TEA_EXTRA_TOOLS 'fakefilter=%s'\n" "$FAKE_BIN"
+    printf 'source %s/share/fish/vendor_conf.d/tea-extra-tools.fish\n' "$TEA_OUT"
+    # Idempotent: a second pass must replace, not duplicate.
+    printf '__tea_extra_tools_apply\n'
+    printf '__tea_extra_tools_apply\n'
+    printf 'if functions -q fakefilter\n'
+    printf '    printf "a\\nb\\nc\\n" | fakefilter --tea >"%s/fish-out.txt"\n' "$WORKDIR"
+    printf '    echo "FISH_RC=$status"\n'
+    printf 'else\n'
+    printf '    echo FISH_RC=no-function\n'
+    printf 'end\n'
+  } >"$fish_extra"
+  set +e
+  fish -i "$fish_extra" >"$WORKDIR/fish-stdout.txt" 2>"$WORKDIR/fish-stderr.txt"
+  fish_hook_rc=$?
+  set -e
+  FISH_RC_LINE="$("$GREP" -o 'FISH_RC=[^[:space:]]*' "$WORKDIR/fish-stdout.txt" 2>/dev/null | "$TAIL" -n 1)"
+  if [[ "$FISH_RC_LINE" == 'FISH_RC=0' && -f "$WORKDIR/fish-out.txt" ]] \
+    && "$GREP" -q '^a$' "$WORKDIR/fish-out.txt"; then
+    pass "fish hook creates a working shadow function (TEA_EXTRA_TOOLS)"
+  else
+    fail "fish shadow function failed (line=$(printf %q "$FISH_RC_LINE") rc=$fish_hook_rc err=$("$TAIL" -n 3 "$WORKDIR/fish-stderr.txt" 2>/dev/null))"
+  fi
+  if [[ -f "$WORKDIR/logs.csv" ]] && "$TAIL" -n 1 "$WORKDIR/logs.csv" | "$GREP" -q ',fakefilter,'; then
+    pass "fish shadow function routes through tea-wrap (logs.csv row)"
+  else
+    fail "fish shadow function produced no logs.csv row"
+  fi
+
+  # Non-exported scope (set -g): the generated function re-exports its own
+  # pair for the child, so the wrap works even if the variable never leaves
+  # the fish process.
+  clear_logs
+  fish_nx="$WORKDIR/extra-tools-noexport.fish"
+  {
+    printf 'set -e TEA_OFF\n'
+    printf 'set -gx PATH "%s/bin" $PATH\n' "$TEA_OUT"
+    printf "set -g TEA_EXTRA_TOOLS 'fakefilter=%s'\n" "$FAKE_BIN"
+    printf 'source %s/share/fish/vendor_conf.d/tea-extra-tools.fish\n' "$TEA_OUT"
+    printf 'emit fish_prompt\n'
+    printf 'printf "x\\n" | fakefilter --tea >/dev/null\n'
+    printf 'echo "FISH_RC=$status"\n'
+  } >"$fish_nx"
+  set +e
+  fish -i "$fish_nx" >"$WORKDIR/fish-nx-out.txt" 2>/dev/null
+  set -e
+  if "$GREP" -q 'FISH_RC=0' "$WORKDIR/fish-nx-out.txt"; then
+    pass "shadow function works with non-exported TEA_EXTRA_TOOLS scope"
+  else
+    fail "non-exported TEA_EXTRA_TOOLS scope should still wrap ($("$CAT" "$WORKDIR/fish-nx-out.txt" 2>/dev/null))"
+  fi
+
+  # Non-interactive sessions never see fish_prompt → no shadow functions.
+  set +e
+  fish -N -c "set -g TEA_EXTRA_TOOLS 'fakefilter=$FAKE_BIN'
+source $TEA_OUT/share/fish/vendor_conf.d/tea-extra-tools.fish
+if functions -q fakefilter
+    exit 3
+end
+exit 0"
+  fish_ni_rc=$?
+  set -e
+  if [[ "$fish_ni_rc" -eq 0 ]]; then
+    pass "non-interactive fish does not create shadow functions"
+  else
+    fail "shadow functions leaked into non-interactive fish (rc=$fish_ni_rc)"
+  fi
+else
+  pass "fish hook shadow functions (skipped: fish not on PATH)"
 fi
 
 echo
