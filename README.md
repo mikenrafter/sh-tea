@@ -26,7 +26,7 @@ something looks wrong, with zero change to the command that was run.
 
 This repo and its Nix flake package attribute are `sh-tea`. The installed
 CLI, every environment variable, and the config directory are all just
-`tea`, because it would be real `sh*t**` to miss out on a quadruple entendre. `sh-tea` also ships
+`tea`, because it would be real `sh-tea` to miss out on a quadruple entendre. `sh-tea` also ships
 on `PATH` as a plain alias: same binary, same flags, same config, just a
 second name for anyone who typed the full project name out of habit.
 <!--
