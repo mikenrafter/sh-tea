@@ -1,0 +1,5 @@
+Let's extend the tool wrappage to include a user-defined configurable variable in nix. I would like the ability to control it via an env var in interactive shells as well. The nix module option would be available in $PATH everywhere, while the env var version would be available only in sh-tea enabled interactive shells.
+
+Users may wish to wrap their own tools... For example, `rg`... So, let's let them do that. Once you have that working, Set that config option in ../phoe-nix/scout-modules/sh-tea/ to include the rg binary (it must refer to the proper outpath for ripgrep's built binary, not an env-resolved path), then commit and push to sh-tea, then, run `cd /home/v0id/Documents/repos/phoe-nix && nix flake update sh-tea && nix-scout update all` and return here when all of that is done. DO NOT COMMIT in phoe-nix. You must commit in sh-tea in order to complete this task, otherwise the `nix flake update` step will fail.
+
+When you return here, I'll inspect your work and run `nix-scout switch sh-tea` (which requires sudo, hence your deferral).
