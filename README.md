@@ -29,8 +29,10 @@ CLI, every environment variable, and the config directory are all just
 `tea`, because it would be real `sh*t**` to miss out on a quadruple entendre. `sh-tea` also ships
 on `PATH` as a plain alias: same binary, same flags, same config, just a
 second name for anyone who typed the full project name out of habit.
-<!-- AGENT: Not an
-inconsistency — see `man tea`'s NOTES section. - ->
+<!--
+AGENT: Not an
+inconsistency — see `man tea`'s NOTES section.
+-->
 
 ## Install / build
 
