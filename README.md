@@ -1,9 +1,8 @@
 # sh-tea
 
 A transparent pipeline stage logger for stdin→stdout Unix filters. It's a
-`tee` pun: `tea` sits in front of tools like `grep`, `sed`, `awk`, and `sort`,
-and — when activated — quietly copies each stage's stdin to a temp file and
-logs it, without touching the tool's actual stdout. Your pipeline runs
+`tee` pun: `tea` sits in front of tools like `grep`, `sed`, `tail`, `sort`, and any the user configures (such as `rg`, see [Wrapping Your Own Tools](##Wrapping Your Own Tools)). [When activated](###When does it actually activate), it transparently copies any wrapped tool's stdin to a temp file
+, without touching the tool's actual stdout. Your pipeline runs
 exactly as before; you just get a paper trail of what each stage saw.
 
 ```
@@ -16,24 +15,22 @@ at it.
 
 ## Why
 
-Debugging a long pipeline usually means re-running it with `tee` spliced in
-at every stage you're suspicious of, or adding `set -x` and hoping. `tea`
-flips that: the wrapper is always there, so instead of re-running anything
+Debugging an expensive command without `tea` requires active forethought (`superlong build | tee /tmp/just-in-case.log | tail -10`). Inspecting a long pipeline usually means re-running it with `tee` spliced between stages. `tea` flips that: the wrapper is always there, so instead of re-running anything,
 you just look at what already got captured. It's aimed squarely at agentic
 coding sessions (Claude Code, Cursor, Copilot CLI, etc.) chaining `nix eval`
-/ `nix build` output through `grep -C 10 | sort | uniq | tail -100` — `tea`
-auto-activates there so the intermediate stream is on disk by the time
+/ `nix build` / `cargo build` / etc output through `grep -C 10 | sort | uniq | tail -100` — `tea`
+auto-activates so the intermediate stream is on disk by the time
 something looks wrong, with zero change to the command that was run.
 
 ## Naming: sh-tea vs tea
 
 This repo and its Nix flake package attribute are `sh-tea`. The installed
 CLI, every environment variable, and the config directory are all just
-`tea` — that's the tool's actual day-to-day identity, kept short because
-you'll be typing `--tea` and reading `TEA_*` constantly. `sh-tea` also ships
+`tea`, because it would be real `sh*t**` to miss out on a quadruple entendre. `sh-tea` also ships
 on `PATH` as a plain alias: same binary, same flags, same config, just a
-second name for anyone who typed the full project name out of habit. Not an
-inconsistency — see `man tea`'s NOTES section.
+second name for anyone who typed the full project name out of habit.
+<!-- AGENT: Not an
+inconsistency — see `man tea`'s NOTES section.- ->
 
 ## Install / build
 
