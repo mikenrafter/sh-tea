@@ -1,7 +1,7 @@
 # sh-tea
 
 A transparent pipeline stage logger for stdin→stdout Unix filters. It's a
-`tee` pun: `tea` sits in front of tools like `grep`, `sed`, `tail`, `sort`, and any the user configures (such as `rg`, see [Wrapping Your Own Tools](##Wrapping Your Own Tools)). [When activated](###When does it actually activate), it transparently copies any wrapped tool's stdin to a temp file
+`tee` pun: `tea` sits in front of tools like `grep`, `sed`, `tail`, `sort`, and any the user configures (such as `rg`, see <a href="#-wrapping-your-own-tools">Wrapping Your Own Tools</a>). <a href="#-when-does-it-actually-activate">When activated</a>, it transparently copies any wrapped tool's stdin to a temp file
 , without touching the tool's actual stdout. Your pipeline runs
 exactly as before; you just get a paper trail of what each stage saw.
 
