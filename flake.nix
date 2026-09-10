@@ -144,7 +144,12 @@
             complete -c ${cmd} -n __fish_use_subcommand -a show -d 'Print a logfile (optional id)'
             complete -c ${cmd} -n __fish_use_subcommand -a config -d 'Ensure/print config.toml path'
             complete -c ${cmd} -n __fish_use_subcommand -a which -d 'Debug activation for a tool'
+            complete -c ${cmd} -n __fish_use_subcommand -a skill -d 'Print/install tea agent skill'
+            complete -c ${cmd} -n __fish_use_subcommand -a hooks -d 'Print/install agent hooks (>5s)'
             complete -c ${cmd} -n '__fish_seen_subcommand_from which' -a '${lib.concatStringsSep " " toolNames}'
+            complete -c ${cmd} -n '__fish_seen_subcommand_from skill hooks' -l agent -d 'claude|cursor|codex|all'
+            complete -c ${cmd} -n '__fish_seen_subcommand_from skill hooks' -l install-hooks-globally -d 'Merge into ~/.agent config'
+            complete -c ${cmd} -n '__fish_seen_subcommand_from hooks' -a run -d 'Hook runner (stdin JSON)'
           '') [ "tea" "sh-tea" ]
         );
 
@@ -155,7 +160,7 @@
               local cur="''${COMP_WORDS[COMP_CWORD]}"
               local prev="''${COMP_WORDS[COMP_CWORD-1]}"
               if [[ $COMP_CWORD -eq 1 ]]; then
-                COMPREPLY=( $(compgen -W "last list show config which -h --help" -- "$cur") )
+                COMPREPLY=( $(compgen -W "last list show config which skill hooks -h --help" -- "$cur") )
                 return
               fi
               if [[ $prev == which ]]; then

@@ -3,7 +3,12 @@
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process;
+use std::str::FromStr;
 
+use tea::agent_hooks::{
+    emit_hooks_document, install_hooks_globally, install_skill_globally, run_hook, Agent,
+    SKILL_TEXT,
+};
 use tea::{
     ensure_user_config, evaluate_activation, last_row, list_rows, load_config, load_tools,
     tool_config, ActivationContext, ActivationOutcome, ActivationReport, Config, CSV_FIELDS,
@@ -21,6 +26,13 @@ Activation (first match wins):
   --tea                 force on
   agentic user pipeline auto on (unless manual-only)
   interactive user pipeline auto on when default-interactive = true
+
+Agent helpers (print by default; install only with flags):
+  tea skill [--agent AGENT] [--install-hooks-globally]
+  tea hooks --agent AGENT [--install-hooks-globally]
+  tea hooks run --agent AGENT   (hook stdin→stdout; used by harness hooks)
+
+Agents: claude | cursor | codex  (also: claude-code, cursor-cli)
 
 Config: ~/.config/tea/config.toml  (created on first use)
 See:    man tea
@@ -201,6 +213,170 @@ fn cmd_which(tool: &str, extra_args: &[String]) -> i32 {
     0
 }
 
+#[derive(Debug, Default)]
+struct AgentFlags {
+    agent: Option<Agent>,
+    install_globally: bool,
+    agents_all: bool,
+}
+
+fn parse_agent_flags(args: &[String]) -> Result<AgentFlags, String> {
+    let mut flags = AgentFlags::default();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--install-hooks-globally" => {
+                flags.install_globally = true;
+                i += 1;
+            }
+            "--agent" => {
+                let Some(val) = args.get(i + 1) else {
+                    return Err("--agent requires a value (claude|cursor|codex|all)".into());
+                };
+                if val == "all" {
+                    flags.agents_all = true;
+                } else {
+                    flags.agent = Some(Agent::from_str(val)?);
+                }
+                i += 2;
+            }
+            other if other.starts_with('-') => {
+                return Err(format!("unknown flag: {other}"));
+            }
+            other => return Err(format!("unexpected argument: {other}")),
+        }
+    }
+    Ok(flags)
+}
+
+fn agents_from_flags(flags: &AgentFlags) -> Result<Vec<Agent>, String> {
+    if flags.agents_all {
+        Ok(Agent::all().to_vec())
+    } else if let Some(a) = flags.agent {
+        Ok(vec![a])
+    } else {
+        Err("--agent is required (claude|cursor|codex|all)".into())
+    }
+}
+
+fn install_agent_pair(agent: Agent) -> i32 {
+    let mut failed = false;
+    match install_skill_globally(agent) {
+        Ok(path) => eprintln!("tea: installed skill → {}", path.display()),
+        Err(e) => {
+            eprintln!(
+                "tea: skill install skipped ({}): {e} — hooks may still install; root/tmpfiles-owned skill dirs need nix activation",
+                agent.as_str()
+            );
+            failed = true;
+        }
+    }
+    match install_hooks_globally(agent) {
+        Ok(path) => eprintln!("tea: installed hooks → {}", path.display()),
+        Err(e) => {
+            eprintln!("tea: install hooks ({}): {e}", agent.as_str());
+            failed = true;
+        }
+    }
+    if failed {
+        1
+    } else {
+        0
+    }
+}
+
+fn cmd_skill(args: &[String]) -> i32 {
+    let flags = match parse_agent_flags(args) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("tea skill: {e}");
+            return 2;
+        }
+    };
+    if flags.install_globally {
+        let agents = match agents_from_flags(&flags) {
+            Ok(a) => a,
+            Err(e) => {
+                eprintln!("tea skill: {e}");
+                return 2;
+            }
+        };
+        let mut code = 0;
+        for agent in agents {
+            code |= install_agent_pair(agent);
+        }
+        code
+    } else {
+        print!("{SKILL_TEXT}");
+        0
+    }
+}
+
+fn cmd_hooks(args: &[String]) -> i32 {
+    if args.first().map(|s| s.as_str()) == Some("run") {
+        let flags = match parse_agent_flags(&args[1..]) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("tea hooks run: {e}");
+                return 2;
+            }
+        };
+        if flags.install_globally || flags.agents_all {
+            eprintln!("tea hooks run: only --agent <claude|cursor|codex> is accepted");
+            return 2;
+        }
+        let Some(agent) = flags.agent else {
+            eprintln!("usage: tea hooks run --agent <claude|cursor|codex>");
+            return 2;
+        };
+        return match run_hook(agent, &mut io::stdin(), &mut io::stdout()) {
+            Ok(code) => code,
+            Err(e) => {
+                eprintln!("tea hooks run: {e}");
+                1
+            }
+        };
+    }
+
+    let flags = match parse_agent_flags(args) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("tea hooks: {e}");
+            return 2;
+        }
+    };
+    let agents = match agents_from_flags(&flags) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("tea hooks: {e}");
+            eprintln!("usage: tea hooks --agent <claude|cursor|codex|all> [--install-hooks-globally]");
+            return 2;
+        }
+    };
+
+    if flags.install_globally {
+        let mut code = 0;
+        for agent in agents {
+            code |= install_agent_pair(agent);
+        }
+        code
+    } else if agents.len() == 1 {
+        let doc = emit_hooks_document(agents[0]);
+        println!("{}", serde_json::to_string_pretty(&doc).unwrap());
+        0
+    } else {
+        let mut map = serde_json::Map::new();
+        for agent in agents {
+            map.insert(agent.as_str().into(), emit_hooks_document(agent));
+        }
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::Value::Object(map)).unwrap()
+        );
+        0
+    }
+}
+
 fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     if argv.is_empty() || argv[0] == "-h" || argv[0] == "--help" {
@@ -224,6 +400,8 @@ fn main() {
             let extra = argv.get(2..).unwrap_or(&[]);
             cmd_which(tool, extra)
         }
+        "skill" => cmd_skill(argv.get(1..).unwrap_or(&[])),
+        "hooks" => cmd_hooks(argv.get(1..).unwrap_or(&[])),
         _ => {
             eprint!("{USAGE}");
             2

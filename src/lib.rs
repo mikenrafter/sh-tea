@@ -1,6 +1,8 @@
 //! tea — transparent pipeline stage logger (library).
 //! Used by `tea-wrap` and the `tea` CLI.
 
+pub mod agent_hooks;
+
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::{self, File, OpenOptions};

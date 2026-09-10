@@ -255,10 +255,45 @@ Any key can be overridden per tool under `[tools.grep]`, `[tools.sort]`, etc.
   in interactive shells only. See "Wrapping your own tools" above.
 - `XDG_CONFIG_HOME` — config root (default `~/.config`).
 
+## Agent skill + slow-command hooks
+
+Agents often miss the `[tea]` stderr blurb after long pipeline stages. Two
+helpers address that without forcing a particular harness layout:
+
+```
+tea skill                         # print the short skill (pipeable)
+tea hooks --agent cursor          # print Cursor hooks.json fragment
+tea hooks --agent claude          # Claude Code settings.json fragment
+tea hooks --agent codex           # Codex hooks.json fragment
+tea hooks --agent all             # all three, keyed by agent name
+```
+
+Install is opt-in and global only:
+
+```
+tea hooks --agent all --install-hooks-globally
+# or: tea skill --agent cursor --install-hooks-globally
+```
+
+That merges tea-owned entries into `~/.claude/settings.json`,
+`~/.cursor/hooks.json`, and/or `~/.codex/hooks.json`, and writes
+`~/.<agent>/skills/tea/SKILL.md`. Foreign hooks (Entire, BabelTele, …) stay
+put; re-running is idempotent (commands containing `tea hooks run` are the
+merge key).
+
+The hook itself is `tea hooks run --agent <agent>`: after Bash/Shell tool
+calls lasting more than 5s it injects a reminder to read `[tea]` stderr
+lines and `tea last` / `tea show`.
+
 ## Testing
 
-There's no `cargo test` — behavior is verified end to end against the real
-Nix-built package:
+Lib unit tests (agent hooks merge / duration gate):
+
+```
+nix develop -c cargo test --lib
+```
+
+End-to-end behavior is verified against the real Nix-built package:
 
 ```
 tests/functional.sh

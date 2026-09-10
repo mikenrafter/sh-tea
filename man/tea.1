@@ -13,7 +13,8 @@ tea, sh-tea \- transparent pipeline stage logger (tee pun)
 .RB [ last | list | show
 .RI [ id ]
 .RB | config | which
-.IR tool ]
+.IR tool
+.RB | skill | hooks ]
 .
 .SH DESCRIPTION
 .B tea
@@ -301,6 +302,29 @@ runtime signals collected during that evaluation, and effective config (includin
 and optional
 .BR --tea / --coffee / --no-tea / --piped
 flags).
+.TP
+.B tea skill [--agent AGENT] [--install-hooks-globally]
+Print a short agent skill explaining
+.B [tea]
+stderr log pointers.  With
+.B --install-hooks-globally
+and
+.BR --agent ,
+also install the skill and slow-command hooks for that agent
+.RI ( claude ,
+.IR cursor ,
+.IR codex ,
+or
+.IR all ).
+.TP
+.B tea hooks --agent AGENT [--install-hooks-globally]
+Print (default) or merge-install harness hooks that fire after commands taking
+more than 5s, reminding agents to read
+.B [tea]
+stderr lines and logfiles.  Install is additive: foreign hooks (Entire,
+BabelTele, …) are preserved.  Use
+.B tea hooks run --agent AGENT
+as the hook command entrypoint (stdin JSON → optional reminder JSON).
 .
 .SH ENVIRONMENT
 .TP
