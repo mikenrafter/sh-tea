@@ -21,12 +21,12 @@ pub const HOOK_COMMAND_MARKER: &str = "tea hooks run";
 pub const SKILL_TEXT: &str = "\
 ---
 name: tea
-description: How to read tea ([tea]) pipeline stage log pointers on stderr
+description: Recover a filtered pipeline's exact stdin without re-running it — tea caches each stage and leaves a [tea] pointer on stderr
 ---
 
 # tea logs
 
-Wrapped filters (`grep`, `sort`, `rg`, …) may print a one-line pointer on **stderr**:
+tea caches every wrapped filter's stdin (`grep`, `sort`, `rg`, …) before it's gone, so a stage's exact input can be recovered instead of re-running a long or expensive pipeline. Watch for a one-line pointer on **stderr**:
 
 ```
 [tea] --id N /tmp/….tea | <command>
